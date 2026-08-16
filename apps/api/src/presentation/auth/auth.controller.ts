@@ -32,7 +32,7 @@ export class AuthController {
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   loginAction(@Body() dto: LoginDto) {
-    return this.login.execute(dto.email, dto.password);
+    return this.login.execute(dto.identifier, dto.password);
   }
 
   @Public()

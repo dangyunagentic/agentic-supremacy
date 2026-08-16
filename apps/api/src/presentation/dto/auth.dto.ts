@@ -16,10 +16,14 @@ export class RegisterDto {
 }
 
 export class LoginDto {
-  @IsEmail()
-  email!: string;
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  identifier!: string;
 
   @IsString()
+  @MinLength(1)
+  @MaxLength(128)
   password!: string;
 }
 

@@ -13,10 +13,12 @@ export class LoginUseCase {
     @Inject(TOKENS.TokenService) private readonly tokens: TokenServicePort,
   ) {}
 
-  async execute(email: string, password: string): Promise<AuthResult> {
-    const user = await this.users.findByEmail(email.trim().toLowerCase());
+  async execute(identifier: string, password: string): Promise<AuthResult> {
+    const value = identifier.trim();
+    let user = await this.users.findByEmail(value.toLowerCase());
+    if (!user) user = await this.users.findByUsername(value);
     if (!user || !(await this.hasher.compare(password, user.passwordHash))) {
-      throw new UnauthorizedError('Invalid email or password');
+      throw new UnauthorizedError('Invalid username/email or password');
     }
     const safe = assertActive(user);
     return { user: safe, ...this.tokens.issuePair(safe) };

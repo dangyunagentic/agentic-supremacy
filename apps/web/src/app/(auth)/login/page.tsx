@@ -24,7 +24,7 @@ interface AuthResponse {
 export default function LoginPage() {
   const router = useRouter();
   const setSession = useAuthStore((s) => s.setSession);
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const data = await api.post<AuthResponse>('/auth/login', { email, password });
+      const data = await api.post<AuthResponse>('/auth/login', { identifier, password });
       setSession(
         {
           id: data.user.id,
@@ -73,13 +73,13 @@ export default function LoginPage() {
           onSubmit={onSubmit}
           className="flex flex-col gap-4 rounded-[10px] border border-border bg-surface p-6"
         >
-          <Field label="Email">
+          <Field label="Username or email">
             <Input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="username or you@example.com"
+              autoComplete="username"
               required
             />
           </Field>
