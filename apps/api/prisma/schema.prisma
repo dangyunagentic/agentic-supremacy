@@ -1,0 +1,253 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  user
+  admin
+}
+
+enum UserStatus {
+  active
+  suspended
+}
+
+model User {
+  id           String       @id @default(uuid())
+  telegramId   BigInt?      @unique
+  username     String       @unique
+  email        String       @unique
+  passwordHash String
+  role         Role         @default(user)
+  status       UserStatus   @default(active)
+  wallets      Wallet[]
+  tasks        Task[]
+  auditLogs    AuditLog[]
+  rpcEndpoints RpcEndpoint[]
+  transferJobs TransferJob[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([telegramId])
+}
+
+model Wallet {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  address      String   @unique
+  encryptedKey String
+  label        String?
+  chainId      Int      @default(1)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+enum MintMode {
+  public
+  allowlist
+  fcfs
+  auto
+}
+
+enum WalletMode {
+  single
+  self_funded
+  sponsored
+}
+
+enum TimingMode {
+  wait_for_stage
+  fire_now
+  custom_time
+}
+
+enum TaskStatus {
+  draft
+  scheduled
+  pre_flight
+  calldata
+  pre_sign
+  dispatching
+  awaiting_receipt
+  completed
+  failed
+  cancelled
+}
+
+model Task {
+  id               String       @id @default(uuid())
+  userId           String
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name             String
+  collection       String
+  chainKey         String
+  walletIds        String[]
+  quantity         Int
+  mintMode         MintMode     @default(auto)
+  walletMode       WalletMode   @default(single)
+  maxFeeGwei       Float
+  maxPriorityGwei  Float
+  gasLimit         Int          @default(250000)
+  rpcUrls          String[]
+  timingMode       TimingMode   @default(wait_for_stage)
+  customFireTime   DateTime?
+  recipientAddress String?
+  sponsorWalletId  String?
+  status           TaskStatus   @default(draft)
+  resolvedFireAt   DateTime?
+  results          TaskResult[]
+  logs             TaskLog[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  startedAt        DateTime?
+  completedAt      DateTime?
+
+  @@index([userId])
+  @@index([status])
+  @@index([chainKey])
+}
+
+enum WalletResultStatus {
+  pending
+  signed
+  dispatched
+  success
+  reverted
+  rejected
+  timeout
+}
+
+model TaskResult {
+  id            String             @id @default(uuid())
+  taskId        String
+  task          Task               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  walletAddress String
+  walletIndex   Int
+  txHash        String?
+  blockNumber   Int?
+  status        WalletResultStatus @default(pending)
+  gasUsed       Int?
+  errorMessage  String?
+  nftTokenIds   String[]
+  createdAt     DateTime           @default(now())
+
+  @@unique([taskId, walletIndex])
+  @@index([taskId])
+}
+
+enum LogLevel {
+  info
+  warn
+  error
+  success
+}
+
+model TaskLog {
+  id          String    @id @default(uuid())
+  taskId      String
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  level       LogLevel
+  message     String
+  walletIndex Int?
+  timestamp   DateTime  @default(now())
+
+  @@index([taskId])
+  @@index([level])
+}
+
+model Chain {
+  id                Int      @id @default(autoincrement())
+  key               String   @unique
+  chainId           Int      @unique
+  name              String
+  explorer          String
+  nativeSymbol      String
+  publicRpcs        String[]
+  defaultPrivateRpc String?
+  seadropAddress    String   @default("0x00005EA00Ac477B1030CE78506496e8C2dE24bf5")
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id])
+  action     String
+  targetType String
+  targetId   String
+  metadata   Json
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+model SystemConfig {
+  id                 Int      @id @default(1)
+  defaultGasLimit    Int      @default(250000)
+  defaultMaxFeeGwei  Float    @default(2)
+  defaultPriorityGwei Float   @default(0.05)
+  scheduleRefreshSec Int      @default(600)
+  txMaxAttempts      Int      @default(3)
+  pendingTimeoutSec  Int      @default(20)
+  receiptPollBaseMs  Int      @default(250)
+  receiptPollMaxMs   Int      @default(2000)
+  replacementBumpBps Int      @default(11250)
+  openseaApiKeyEnc   String?
+  updatedAt          DateTime @updatedAt
+}
+
+// Saved RPC endpoints per user (Alchemy / QuickNode / dRPC / custom), with a
+// latency probe result so the task wizard can pick the fastest provider.
+model RpcEndpoint {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chainKey      String
+  label         String
+  url           String
+  provider      String   @default("custom") // alchemy | quicknode | drpc | custom
+  tier          String   @default("free")   // free | paid
+  lastLatencyMs Int?
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([chainKey])
+}
+
+// Bulk transfers executed by the worker: fund (ETH main -> many) and
+// sweep_nft (NFTs many -> one recipient). Results are stored inline.
+model TransferJob {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind             String // fund | sweep_nft
+  chainKey         String
+  fromWalletId     String? // fund: source wallet
+  toWalletIds      String[] // fund: destinations; sweep: source wallets
+  recipientAddress String? // sweep: destination
+  amountEth        Float?
+  tokenContract    String? // sweep: collection address
+  fromBlock        Int?
+  status           String    @default("queued")
+  results          Json      @default("[]")
+  error            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  completedAt      DateTime?
+
+  @@index([userId])
+}

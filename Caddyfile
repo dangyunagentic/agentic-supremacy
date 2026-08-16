@@ -1,0 +1,11 @@
+# Automatic HTTPS via Let's Encrypt.
+
+# Web dashboard
+mint.{$DOMAIN} {
+	reverse_proxy web:3000
+}
+
+# API + WebSocket
+api.{$DOMAIN} {
+	reverse_proxy api:3000
+}
