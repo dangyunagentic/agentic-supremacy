@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  ENGINE_DEFAULTS,
   MAX_WALLETS_PER_TASK,
   MintMode,
   PRE_FLIGHT_LEAD_MS,
@@ -75,14 +76,16 @@ export class CreateTaskUseCase {
       throw new ValidationError('Quantity must be between 1 and 50 per wallet');
     }
 
-    // ── Gas ──
-    if (input.maxFeeGwei <= 0 || input.maxPriorityGwei < 0) {
+    // ── Gas (optional → engine defaults) ──
+    const maxFeeGwei = input.maxFeeGwei ?? ENGINE_DEFAULTS.defaultMaxFeeGwei;
+    const maxPriorityGwei = input.maxPriorityGwei ?? ENGINE_DEFAULTS.defaultPriorityGwei;
+    if (maxFeeGwei <= 0 || maxPriorityGwei < 0) {
       throw new ValidationError('Gas values must be positive');
     }
-    if (input.maxPriorityGwei >= input.maxFeeGwei) {
+    if (maxPriorityGwei >= maxFeeGwei) {
       throw new ValidationError('Priority tip must be below the fee ceiling');
     }
-    const gasLimit = input.gasLimit ?? 250_000;
+    const gasLimit = input.gasLimit ?? ENGINE_DEFAULTS.defaultGasLimit;
     if (gasLimit < MIN_GAS_LIMIT || gasLimit > MAX_GAS_LIMIT) {
       throw new ValidationError(`Gas limit must be between ${MIN_GAS_LIMIT} and ${MAX_GAS_LIMIT}`);
     }
@@ -101,11 +104,22 @@ export class CreateTaskUseCase {
 
     // ── Timing ──
     let resolvedFireAt: Date | null = null;
-    if (input.timingMode === TimingMode.FireNow) {
+    let timingMode = input.timingMode;
+    let customFireTime = input.customFireTime ?? null;
+
+    if (input.fireTimestamp != null && input.fireTimestamp > 0) {
+      const t = input.fireTimestamp * 1000;
+      if (t < Date.now() + 10_000) {
+        throw new ValidationError('Timestamp must be at least 10 seconds in the future');
+      }
+      resolvedFireAt = new Date(t);
+      timingMode = TimingMode.CustomTime;
+      customFireTime = new Date(t).toISOString();
+    } else if (timingMode === TimingMode.FireNow) {
       resolvedFireAt = new Date(Date.now() + 2_000);
-    } else if (input.timingMode === TimingMode.CustomTime) {
-      if (!input.customFireTime) throw new ValidationError('customFireTime is required');
-      const t = new Date(input.customFireTime).getTime();
+    } else if (timingMode === TimingMode.CustomTime) {
+      if (!customFireTime) throw new ValidationError('customFireTime is required');
+      const t = new Date(customFireTime).getTime();
       if (Number.isNaN(t)) throw new ValidationError('Invalid customFireTime');
       if (t < Date.now() + 10_000) {
         throw new ValidationError('Custom fire time must be at least 10 seconds in the future');
@@ -113,26 +127,48 @@ export class CreateTaskUseCase {
       resolvedFireAt = new Date(t);
     }
 
+    const delayMs = input.delayMs ?? 1000;
+    const name = input.name.trim() || parsed.slug || parsed.address!;
+
     const task = await this.tasks.create({
       userId,
-      name: input.name.trim(),
+      name,
       collection: parsed.address ?? parsed.slug!,
       chainKey: input.chainKey,
       walletIds,
       quantity: input.quantity,
       mintMode: input.mintMode,
       walletMode: input.walletMode,
-      maxFeeGwei: input.maxFeeGwei,
-      maxPriorityGwei: input.maxPriorityGwei,
+      maxFeeGwei,
+      maxPriorityGwei,
       gasLimit,
       rpcUrls: dedupeUrls(input.rpcUrls ?? [], chain.publicRpcs),
-      timingMode: input.timingMode,
-      customFireTime: input.customFireTime ? new Date(input.customFireTime) : null,
+      timingMode,
+      customFireTime: customFireTime ? new Date(customFireTime) : null,
       recipientAddress: input.recipientAddress?.toLowerCase() ?? null,
       sponsorWalletId: input.sponsorWalletId ?? null,
+      pricePerNft: input.pricePerNft ?? null,
+      proxyGroup: input.proxyGroup ?? null,
+      fundedOnly: input.fundedOnly ?? false,
+      flashbots: input.flashbots ?? false,
+      nonce: input.nonce ?? null,
+      fireTimestamp: input.fireTimestamp ?? null,
+      delayMs,
+      simulate: input.simulate ?? false,
+      spam: input.spam ?? false,
+      action: input.action ?? false,
       status: TaskStatus.Scheduled,
       resolvedFireAt,
     });
+
+    // "Action" = manual trigger: persist the task but do not auto-schedule.
+    if (input.action) {
+      await this.notifier.notifyUser(
+        userId,
+        `Task "${name}" created (manual trigger) — run it when ready.`,
+      );
+      return toTaskView(task);
+    }
 
     // Preflight runs at T-60s when the fire time is already known, otherwise
     // immediately so the worker can resolve the on-chain stage start.
@@ -147,7 +183,7 @@ export class CreateTaskUseCase {
 
     await this.notifier.notifyUser(
       userId,
-      `Task "${task.name}" created and scheduled on ${chain.name}.`,
+      `Task "${name}" created and scheduled on ${chain.name}.`,
     );
 
     return toTaskView(task);
@@ -181,6 +217,17 @@ export function toTaskView(task: TaskEntity): TaskView {
     customFireTime: task.customFireTime?.toISOString() ?? null,
     resolvedFireAt: task.resolvedFireAt?.toISOString() ?? null,
     recipientAddress: task.recipientAddress,
+    sponsorWalletId: task.sponsorWalletId,
+    pricePerNft: task.pricePerNft,
+    proxyGroup: task.proxyGroup,
+    fundedOnly: task.fundedOnly,
+    flashbots: task.flashbots,
+    nonce: task.nonce,
+    fireTimestamp: task.fireTimestamp,
+    delayMs: task.delayMs,
+    simulate: task.simulate,
+    spam: task.spam,
+    action: task.action,
     status: task.status,
     createdAt: task.createdAt.toISOString(),
     startedAt: task.startedAt?.toISOString() ?? null,

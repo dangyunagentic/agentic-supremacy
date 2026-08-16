@@ -18,6 +18,16 @@ export interface TaskEntity {
   customFireTime: Date | null;
   recipientAddress: string | null;
   sponsorWalletId: string | null;
+  pricePerNft: number | null;
+  proxyGroup: string | null;
+  fundedOnly: boolean;
+  flashbots: boolean;
+  nonce: number | null;
+  fireTimestamp: number | null;
+  delayMs: number;
+  simulate: boolean;
+  spam: boolean;
+  action: boolean;
   status: TaskStatus;
   resolvedFireAt: Date | null;
   createdAt: Date;

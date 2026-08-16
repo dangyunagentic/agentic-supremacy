@@ -1,7 +1,7 @@
 // MintEngine: composes the ported primitives into the PRD's 5-phase
 // execution pipeline. Pure orchestration: no database access here.
 
-import { JsonRpcProvider, Wallet, keccak256, type Provider } from 'ethers';
+import { JsonRpcProvider, Wallet, keccak256, getBytes, toUtf8Bytes, type Provider } from 'ethers';
 import { gweiToWei, PRE_SIGN_LEAD_MS } from '@mintbot/shared';
 import { buildLocalMintPlan, fetchPublicDrop, type LocalMintPlan } from './seadrop-public';
 import { buildSignedPlans, type SignedMintPlan } from './seadrop-signed';
@@ -166,6 +166,7 @@ export class MintEngine {
     plan: BuiltPlan,
     gas: GasSpec,
     chainId: number,
+    nonceOverride?: number | null,
   ): Promise<SignedTx[]> {
     const maxFeePerGas = gweiToWei(gas.maxFeeGwei);
     const maxPriorityFeePerGas = gweiToWei(gas.maxPriorityGwei);
@@ -193,7 +194,10 @@ export class MintEngine {
         throw new Error(`No mint action available for wallet ${engineWallet.address}`);
       }
 
-      const nonce = await this.provider.getTransactionCount(engineWallet.address, 'pending');
+      const nonce =
+        nonceOverride != null && nonceOverride >= 0
+          ? nonceOverride
+          : await this.provider.getTransactionCount(engineWallet.address, 'pending');
       const rawTx = await ethersWallet.signTransaction({
         chainId,
         nonce,
@@ -223,13 +227,41 @@ export class MintEngine {
     await waitForMintTime(fireAt, PRE_SIGN_LEAD_MS);
   }
 
-  /** Blast each signed tx to every RPC. Does not wait for responses. */
-  blastAll(signed: SignedTx[]): DispatchedTx[] {
-    return signed.map((s) => {
+  /** Blast each signed tx to every RPC, optionally with a delay between wallets. */
+  async blastAll(signed: SignedTx[], delayMs = 0): Promise<DispatchedTx[]> {
+    const dispatched: DispatchedTx[] = [];
+    for (const s of signed) {
       const { txHash, responsePromise } = blastToAll(s.rawTx, this.chain.rpcUrls);
       void responsePromise;
-      return { ...s, txHash, results: [] };
+      dispatched.push({ ...s, txHash, results: [] });
+      if (delayMs > 0 && s !== signed[signed.length - 1]) {
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+    return dispatched;
+  }
+
+  /** Submit signed raw txs as a Flashbots bundle to the public relay (ETH mainnet). */
+  async submitFlashbots(rawTxs: string[], funderPrivateKey: string): Promise<string> {
+    if (this.chain.chainId !== 1) {
+      throw new Error('Flashbots relay is only available on Ethereum mainnet');
+    }
+    const relayUrl = process.env.FLASHBOTS_RELAY_URL ?? 'https://relay.flashbots.net';
+    const builder = new Wallet(funderPrivateKey);
+    const signature = `${builder.address}:${await builder.signMessage(getBytes(keccak256(toUtf8Bytes(JSON.stringify(rawTxs)))))}`;
+    const res = await fetch(relayUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-flashbots-signature': signature },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_sendBundle',
+        params: [{ txs: rawTxs, block: 'latest' }],
+      }),
     });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`Flashbots relay HTTP ${res.status}: ${text.slice(0, 160)}`);
+    return text;
   }
 
   async collectReceipts(

@@ -103,6 +103,16 @@ model Task {
   customFireTime   DateTime?
   recipientAddress String?
   sponsorWalletId  String?
+  pricePerNft      Float?
+  proxyGroup       String?
+  fundedOnly       Boolean  @default(false)
+  flashbots        Boolean  @default(false)
+  nonce            Int?
+  fireTimestamp    Int?
+  delayMs          Int      @default(1000)
+  simulate         Boolean  @default(false)
+  spam             Boolean  @default(false)
+  action           Boolean  @default(false)
   status           TaskStatus   @default(draft)
   resolvedFireAt   DateTime?
   results          TaskResult[]

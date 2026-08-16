@@ -23,21 +23,27 @@ import { Field, Input, Select } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 interface NewTaskForm {
-  name: string;
   collection: string;
   chainKey: string;
-  walletIds: string[];
-  quantity: number;
   mintMode: MintMode;
-  walletMode: WalletMode;
-  maxFeeGwei: number;
-  maxPriorityGwei: number;
-  gasLimit: number;
-  timingMode: TimingMode;
-  customFireTime: string;
+  proxyGroup: string;
+  quantity: number;
+  pricePerNft: number;
+  fundedOnly: boolean;
+  walletIds: string[];
+  flashbots: boolean;
+  maxFeeGwei: string;
+  maxPriorityGwei: string;
+  gasLimit: string;
+  nonce: string;
+  timestamp: string;
+  delayMs: number;
+  simulate: boolean;
+  spam: boolean;
+  action: boolean;
 }
 
-/** Input with a right-aligned unit suffix (gwei, units, etc.). */
+/** Input with a right-aligned unit suffix (gwei, units, ms, etc.). */
 function UnitInput({
   unit,
   className,
@@ -53,21 +59,62 @@ function UnitInput({
   );
 }
 
+function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex items-center gap-2 text-left"
+    >
+      <span
+        className={cn(
+          'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+          checked ? 'bg-accent' : 'bg-border',
+        )}
+      >
+        <span
+          className={cn(
+            'inline-block size-4 rounded-full bg-white transition-transform',
+            checked ? 'translate-x-[18px]' : 'translate-x-0.5',
+          )}
+        />
+      </span>
+      <span className="text-sm text-text-secondary">{label}</span>
+    </button>
+  );
+}
+
 export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const [form, setForm] = useState<NewTaskForm>({
-    name: '',
     collection: '',
     chainKey: '',
-    walletIds: [],
-    quantity: 1,
     mintMode: MintMode.Auto,
-    walletMode: WalletMode.SelfFunded,
-    maxFeeGwei: 2,
-    maxPriorityGwei: 0.05,
-    gasLimit: 250000,
-    timingMode: TimingMode.WaitForStage,
-    customFireTime: '',
+    proxyGroup: '',
+    quantity: 1,
+    pricePerNft: 0,
+    fundedOnly: false,
+    walletIds: [],
+    flashbots: false,
+    maxFeeGwei: '',
+    maxPriorityGwei: '',
+    gasLimit: '',
+    nonce: '',
+    timestamp: '',
+    delayMs: 1000,
+    simulate: false,
+    spam: false,
+    action: false,
   });
   const [selectedRpcIds, setSelectedRpcIds] = useState<string[]>([]);
   const [customRpcs, setCustomRpcs] = useState('');
@@ -99,11 +146,7 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const walletCap = MAX_WALLETS_PER_TASK[form.walletMode] ?? 1;
-  const gasValid = form.maxPriorityGwei < form.maxFeeGwei && form.maxFeeGwei > 0;
-  const timingValid =
-    form.timingMode !== TimingMode.CustomTime ||
-    new Date(form.customFireTime).getTime() > Date.now() + 10_000;
+  const walletCap = MAX_WALLETS_PER_TASK[WalletMode.SelfFunded] ?? 1;
 
   const set = <K extends keyof NewTaskForm>(key: K, value: NewTaskForm[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -142,48 +185,51 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
   const allRpcSelected = selectedRpcIds.length === 0;
 
   const submit = () => {
-    create.mutate({
-      name: form.name.trim() || form.collection,
-      collection: form.collection,
+    const payload: CreateTaskInput = {
+      name: form.collection.trim(),
+      collection: form.collection.trim(),
       chainKey: form.chainKey,
       walletIds: form.walletIds,
       quantity: form.quantity,
       mintMode: form.mintMode,
-      walletMode: form.walletMode,
-      maxFeeGwei: form.maxFeeGwei,
-      maxPriorityGwei: form.maxPriorityGwei,
-      gasLimit: form.gasLimit,
+      walletMode: WalletMode.SelfFunded,
       rpcUrls: [
         ...(rpcEndpoints.data ?? [])
           .filter((ep) => selectedRpcIds.includes(ep.id))
           .map((ep) => ep.url),
         ...customRpcs.split('\n').map((u) => u.trim()).filter((u) => u.startsWith('http')),
       ],
-      timingMode: form.timingMode,
-      customFireTime: form.timingMode === TimingMode.CustomTime ? new Date(form.customFireTime).toISOString() : null,
-    });
+      timingMode: form.timestamp !== '' ? TimingMode.CustomTime : TimingMode.WaitForStage,
+      customFireTime: null,
+      pricePerNft: form.pricePerNft > 0 ? form.pricePerNft : null,
+      proxyGroup: form.proxyGroup || null,
+      fundedOnly: form.fundedOnly,
+      flashbots: form.flashbots,
+      nonce: form.nonce === '' ? null : Number(form.nonce),
+      fireTimestamp: form.timestamp === '' ? null : Number(form.timestamp),
+      delayMs: form.delayMs,
+      simulate: form.simulate,
+      spam: form.spam,
+      action: form.action,
+    };
+    if (form.maxFeeGwei !== '') payload.maxFeeGwei = Number(form.maxFeeGwei);
+    if (form.maxPriorityGwei !== '') payload.maxPriorityGwei = Number(form.maxPriorityGwei);
+    if (form.gasLimit !== '') payload.gasLimit = Number(form.gasLimit);
+    create.mutate(payload);
   };
 
   const collectionValid = form.collection.trim().length > 1 && form.chainKey !== '';
-  const walletsValid = form.walletIds.length > 0 && form.walletIds.length <= walletCap && form.quantity >= 1;
-  const canSubmit = collectionValid && walletsValid && gasValid && form.gasLimit >= 21000 && timingValid;
+  const walletsValid = form.walletIds.length > 0 && form.quantity >= 1;
+  const fee = form.maxFeeGwei === '' ? NaN : Number(form.maxFeeGwei);
+  const prio = form.maxPriorityGwei === '' ? NaN : Number(form.maxPriorityGwei);
+  const gasValid = Number.isNaN(fee) || Number.isNaN(prio) || (prio < fee && fee > 0);
+  const canSubmit = collectionValid && walletsValid && gasValid && !create.isPending;
 
   return (
     <Dialog open={open} onClose={onClose} title="Create Task" size="xl">
       <div className="grid grid-cols-12 gap-4">
-        {/* Task name */}
+        {/* Contract Address / Launchpad Link */}
         <div className="col-span-12">
-          <Field label="Task name">
-            <Input
-              value={form.name}
-              onChange={(e) => set('name', e.target.value)}
-              placeholder="Bored Apes public mint (auto from collection if blank)"
-            />
-          </Field>
-        </div>
-
-        {/* Row 1: Contract / Launchpad link + Chain */}
-        <div className="col-span-12 lg:col-span-9">
           <Field
             label="Contract Address / Launchpad Link"
             hint="Contract address (public mints) or OpenSea slug / URL (allowlist & FCFS)"
@@ -196,7 +242,9 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
             />
           </Field>
         </div>
-        <div className="col-span-12 lg:col-span-3">
+
+        {/* Chain + Mint Phase */}
+        <div className="col-span-12 sm:col-span-6">
           <Field label="Chain">
             <Select value={form.chainKey} onChange={(e) => set('chainKey', e.target.value)}>
               <option value="">Select chain</option>
@@ -208,40 +256,30 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
             </Select>
           </Field>
         </div>
-
-        {/* Row 2: Mint Phase (full width) */}
-        <div className="col-span-12">
-          <Field label="Mint Phase" hint="Auto resolves the live stage from the chain">
+        <div className="col-span-12 sm:col-span-6">
+          <Field label="Mint Phase">
             <Select
               value={form.mintMode}
               onChange={(e) => set('mintMode', e.target.value as MintMode)}
             >
-              <option value={MintMode.Auto}>Auto detect</option>
               <option value={MintMode.Public}>Public</option>
               <option value={MintMode.Allowlist}>Allowlist</option>
               <option value={MintMode.Fcfs}>FCFS</option>
+              <option value={MintMode.Auto}>Auto detect</option>
             </Select>
           </Field>
         </div>
 
-        {/* Row 3: Wallet mode + NFT amount */}
-        <div className="col-span-12 sm:col-span-6">
-          <Field label="Wallet Mode">
-            <Select
-              value={form.walletMode}
-              onChange={(e) => {
-                const mode = e.target.value as WalletMode;
-                const cap = MAX_WALLETS_PER_TASK[mode] ?? 1;
-                setForm((f) => ({ ...f, walletMode: mode, walletIds: f.walletIds.slice(0, cap) }));
-              }}
-            >
-              <option value={WalletMode.SelfFunded}>Self-funded (unlimited)</option>
-              <option value={WalletMode.Single}>Single (1)</option>
+        {/* Proxy Group + NFT Amount + Price per NFT */}
+        <div className="col-span-12 sm:col-span-4">
+          <Field label="Proxy Group">
+            <Select value={form.proxyGroup} onChange={(e) => set('proxyGroup', e.target.value)}>
+              <option value="">(no proxy)</option>
             </Select>
           </Field>
         </div>
-        <div className="col-span-12 sm:col-span-6">
-          <Field label="NFT Amount" hint="Mints per wallet (max 50)">
+        <div className="col-span-6 sm:col-span-4">
+          <Field label="NFT Amount" hint="Per wallet (max 50)">
             <Input
               type="number"
               min={1}
@@ -251,9 +289,30 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
             />
           </Field>
         </div>
+        <div className="col-span-6 sm:col-span-4">
+          <Field label="Price per NFT" hint="Optional, informational">
+            <Input
+              type="number"
+              min={0}
+              step="0.000001"
+              value={form.pricePerNft}
+              onChange={(e) => set('pricePerNft', Number(e.target.value))}
+              placeholder="0"
+            />
+          </Field>
+        </div>
 
-        {/* Row 4: Wallets (full width) */}
-        <div className="col-span-12">
+        {/* Funded Only + Wallets */}
+        <div className="col-span-12 sm:col-span-4">
+          <div className="mb-2 flex h-9 items-center">
+            <Toggle
+              checked={form.fundedOnly}
+              onChange={(v) => set('fundedOnly', v)}
+              label="Funded Only"
+            />
+          </div>
+        </div>
+        <div className="col-span-12 sm:col-span-8">
           <div className="mb-2 flex items-center justify-between">
             <span className="label">Wallets</span>
             <span className="text-xs text-text-muted">
@@ -326,8 +385,13 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
           </div>
         </div>
 
-        {/* Row 5: RPC Endpoints (full width) */}
-        <div className="col-span-12">
+        {/* Flashbots + RPC Endpoints */}
+        <div className="col-span-12 sm:col-span-4">
+          <div className="mb-2 flex h-9 items-center">
+            <Toggle checked={form.flashbots} onChange={(v) => set('flashbots', v)} label="Flashbots" />
+          </div>
+        </div>
+        <div className="col-span-12 sm:col-span-8">
           <div className="mb-2 flex items-center justify-between">
             <span className="label">RPC Endpoints</span>
             <a href="/rpc" className="text-xs text-accent hover:underline">
@@ -409,40 +473,43 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
           />
         </div>
 
-        {/* Row 6: Gas Limit + Max Fee + Priority Fee */}
+        {/* Gas Limit + Max Fee + Priority Fee */}
         <div className="col-span-12 sm:col-span-4">
-          <Field label="Gas Limit" hint="Required">
+          <Field label="Gas Limit">
             <UnitInput
               unit="units"
               type="number"
               min={21000}
               max={2000000}
               value={form.gasLimit}
-              onChange={(e) => set('gasLimit', Number(e.target.value))}
+              onChange={(e) => set('gasLimit', e.target.value)}
+              placeholder="auto"
             />
           </Field>
         </div>
         <div className="col-span-12 sm:col-span-4">
-          <Field label="Max Fee" hint="Reject if base fee is above this">
+          <Field label="Max Fee">
             <UnitInput
               unit="gwei"
               type="number"
               step="0.001"
               min="0.001"
               value={form.maxFeeGwei}
-              onChange={(e) => set('maxFeeGwei', Number(e.target.value))}
+              onChange={(e) => set('maxFeeGwei', e.target.value)}
+              placeholder="auto"
             />
           </Field>
         </div>
         <div className="col-span-12 sm:col-span-4">
-          <Field label="Priority Fee" hint="Must stay below the ceiling">
+          <Field label="Priority Fee">
             <UnitInput
               unit="gwei"
               type="number"
               step="0.001"
               min="0"
               value={form.maxPriorityGwei}
-              onChange={(e) => set('maxPriorityGwei', Number(e.target.value))}
+              onChange={(e) => set('maxPriorityGwei', e.target.value)}
+              placeholder="auto"
             />
           </Field>
         </div>
@@ -452,30 +519,47 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
           </p>
         )}
 
-        {/* Row 7: Timing */}
-        <div className="col-span-12 sm:col-span-6">
-          <Field label="Timing">
-            <Select
-              value={form.timingMode}
-              onChange={(e) => set('timingMode', e.target.value as TimingMode)}
-            >
-              <option value={TimingMode.WaitForStage}>Wait for stage open (on-chain)</option>
-              <option value={TimingMode.FireNow}>Fire now</option>
-              <option value={TimingMode.CustomTime}>Custom time</option>
-            </Select>
+        {/* Nonce + Timestamp + Delay */}
+        <div className="col-span-12 sm:col-span-4">
+          <Field label="Nonce">
+            <Input
+              type="number"
+              min={0}
+              value={form.nonce}
+              onChange={(e) => set('nonce', e.target.value)}
+              placeholder="auto"
+            />
           </Field>
         </div>
-        {form.timingMode === TimingMode.CustomTime && (
-          <div className="col-span-12 sm:col-span-6">
-            <Field label="Fire at" hint="At least 10 seconds from now">
-              <Input
-                type="datetime-local"
-                value={form.customFireTime}
-                onChange={(e) => set('customFireTime', e.target.value)}
-              />
-            </Field>
-          </div>
-        )}
+        <div className="col-span-12 sm:col-span-4">
+          <Field label="Timestamp" hint="Unix seconds">
+            <Input
+              type="number"
+              min={0}
+              value={form.timestamp}
+              onChange={(e) => set('timestamp', e.target.value)}
+              placeholder="now"
+            />
+          </Field>
+        </div>
+        <div className="col-span-12 sm:col-span-4">
+          <Field label="Delay">
+            <UnitInput
+              unit="ms"
+              type="number"
+              min={0}
+              value={form.delayMs}
+              onChange={(e) => set('delayMs', Number(e.target.value))}
+            />
+          </Field>
+        </div>
+
+        {/* Simulate / Spam / Action */}
+        <div className="col-span-12 flex flex-wrap items-center gap-6">
+          <Toggle checked={form.simulate} onChange={(v) => set('simulate', v)} label="Simulate" />
+          <Toggle checked={form.spam} onChange={(v) => set('spam', v)} label="Spam" />
+          <Toggle checked={form.action} onChange={(v) => set('action', v)} label="Action" />
+        </div>
       </div>
 
       <div className="mt-6 flex items-center justify-end gap-3 border-t border-border pt-4">

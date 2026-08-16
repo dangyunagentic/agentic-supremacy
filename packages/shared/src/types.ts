@@ -52,6 +52,17 @@ export interface TaskView {
   customFireTime: string | null;
   resolvedFireAt: string | null;
   recipientAddress: string | null;
+  sponsorWalletId: string | null;
+  pricePerNft: number | null;
+  proxyGroup: string | null;
+  fundedOnly: boolean;
+  flashbots: boolean;
+  nonce: number | null;
+  fireTimestamp: number | null;
+  delayMs: number;
+  simulate: boolean;
+  spam: boolean;
+  action: boolean;
   status: TaskStatus;
   createdAt: string;
   startedAt: string | null;
@@ -172,14 +183,24 @@ export interface CreateTaskInput {
   quantity: number;
   mintMode: MintMode;
   walletMode: WalletMode;
-  maxFeeGwei: number;
-  maxPriorityGwei: number;
+  maxFeeGwei?: number;
+  maxPriorityGwei?: number;
   gasLimit?: number;
   rpcUrls?: string[];
   timingMode: TimingMode;
   customFireTime?: string | null;
   recipientAddress?: string | null;
   sponsorWalletId?: string | null;
+  pricePerNft?: number | null;
+  proxyGroup?: string | null;
+  fundedOnly?: boolean;
+  flashbots?: boolean;
+  nonce?: number | null;
+  fireTimestamp?: number | null;
+  delayMs?: number;
+  simulate?: boolean;
+  spam?: boolean;
+  action?: boolean;
 }
 
 // ── Eligibility ──
