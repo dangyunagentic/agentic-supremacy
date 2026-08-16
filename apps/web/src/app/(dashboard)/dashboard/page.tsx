@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { CheckCircle2, Layers, Plus, Timer, XCircle } from 'lucide-react';
+import { CheckCircle2, Layers, Plus, Timer, TrendingUp, XCircle } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { AdminStatsView, Paginated, TaskView } from '@mintbot/shared';
 import { PageHeader } from '@/components/layout/page-header';
@@ -74,13 +74,15 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Active tasks" value={String(active.length)} icon={<Timer className="size-4" />} />
-        <StatCard label="Completed" value={String(local.completedTasks)} icon={<CheckCircle2 className="size-4" />} />
-        <StatCard label="Failed" value={String(local.failedTasks)} icon={<XCircle className="size-4" />} />
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <StatCard label="Active tasks" value={String(active.length)} icon={<Timer className="size-4" />} tone="accent" />
+        <StatCard label="Completed" value={String(local.completedTasks)} icon={<CheckCircle2 className="size-4" />} tone="success" />
+        <StatCard label="Failed" value={String(local.failedTasks)} icon={<XCircle className="size-4" />} tone="danger" />
         <StatCard
           label="Success rate"
           value={`${(local.successRate * 100).toFixed(0)}%`}
+          icon={<TrendingUp className="size-4" />}
+          tone="warning"
           hint={isAdmin && stats.data ? `${stats.data.totalMinted} NFTs minted system-wide` : undefined}
         />
       </div>

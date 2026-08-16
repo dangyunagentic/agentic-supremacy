@@ -61,6 +61,32 @@
     font-family: var(--font-mono);
     font-size: 13px;
   }
+
+  /* Ultra-thin scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 4px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: var(--color-text-muted);
+  }
+
+  /* Kill 300ms tap delay + double-tap zoom on mobile */
+  button,
+  a {
+    touch-action: manipulation;
+  }
 }
 
 @layer components {
