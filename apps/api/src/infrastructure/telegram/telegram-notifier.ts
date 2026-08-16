@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import { TOKENS } from '../../domain/tokens';
 import type { NotifierPort } from '../../domain/ports/ports';
 import type { UserRepository } from '../../domain/repositories/user.repository';
@@ -8,7 +8,7 @@ import { TelegramBotService } from './telegram-bot.service';
 export class TelegramNotifier implements NotifierPort {
   constructor(
     @Inject(TOKENS.UserRepository) private readonly users: UserRepository,
-    private readonly bot: TelegramBotService,
+    @Inject(forwardRef(() => TelegramBotService)) private readonly bot: TelegramBotService,
   ) {}
 
   async notifyUser(userId: string, message: string): Promise<void> {

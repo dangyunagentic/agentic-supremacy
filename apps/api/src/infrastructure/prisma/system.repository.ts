@@ -10,7 +10,7 @@ import type {
   SystemConfigRepository,
 } from '../../domain/repositories/system.repository';
 import type { Paged } from '../../domain/entities/common.entity';
-import type { PrismaService } from './prisma.service';
+import { PrismaService } from './prisma.service';
 
 @Injectable()
 export class PrismaChainRepository implements ChainRepository {

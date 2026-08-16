@@ -1,15 +1,16 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../shared/jwt.strategy';
 import { CurrentUser } from '../shared/current-user.decorator';
 import { RolesGuard } from '../shared/roles.guard';
 import type { RequestUser } from '../shared/jwt.strategy';
-import { CreateWalletDto } from '../dto/wallet.dto';
+import { CreateWalletDto, RenameWalletDto } from '../dto/wallet.dto';
 import { PaginationDto } from '../dto/task.dto';
 import { CreateWalletUseCase, toWalletView } from '../../application/wallets/create-wallet.use-case';
 import {
   DeleteWalletUseCase,
   GetWalletBalanceUseCase,
   ListWalletsUseCase,
+  RenameWalletUseCase,
 } from '../../application/wallets/wallet.use-cases';
 import { Role } from '@mintbot/shared';
 
@@ -21,6 +22,7 @@ export class WalletsController {
     private readonly list: ListWalletsUseCase,
     private readonly remove: DeleteWalletUseCase,
     private readonly balance: GetWalletBalanceUseCase,
+    private readonly rename: RenameWalletUseCase,
   ) {}
 
   @Get()
@@ -31,6 +33,15 @@ export class WalletsController {
   @Post()
   createAction(@CurrentUser() user: RequestUser, @Body() dto: CreateWalletDto) {
     return this.create.execute({ userId: user.userId, ...dto }).then(toWalletView);
+  }
+
+  @Patch(':id/label')
+  renameAction(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RenameWalletDto,
+  ) {
+    return this.rename.execute(id, user.userId, user.role === Role.Admin, dto.label ?? null);
   }
 
   @Delete(':id')

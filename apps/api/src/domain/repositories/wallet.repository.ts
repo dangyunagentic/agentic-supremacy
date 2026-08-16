@@ -13,6 +13,7 @@ export interface WalletRepository {
   findByAddress(address: string): Promise<WalletEntity | null>;
   listByUser(userId: string): Promise<WalletEntity[]>;
   listAll(params: { page: number; limit: number; ownerId?: string }): Promise<Paged<WalletEntity>>;
+  updateLabel(id: string, label: string | null): Promise<WalletEntity>;
   delete(id: string): Promise<void>;
   countAll(): Promise<number>;
   countByUser(userId: string): Promise<number>;

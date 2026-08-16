@@ -208,7 +208,7 @@ export interface EligibilityReport {
   wallets: EligibilityWalletResult[];
 }
 
-// ── Transfers (fund wallets / sweep NFTs) ──
+// ── Transfers (fund wallets / transfer NFTs) ──
 
 export interface TransferResultEntry {
   address: string;
@@ -219,7 +219,7 @@ export interface TransferResultEntry {
 
 export interface TransferJobView {
   id: string;
-  kind: 'fund' | 'sweep_nft';
+  kind: 'fund' | 'transfer_nft';
   chainKey: string;
   fromWalletAddress: string | null;
   recipientAddress: string | null;

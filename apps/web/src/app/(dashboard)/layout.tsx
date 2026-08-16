@@ -8,15 +8,24 @@ import { Sidebar } from '@/components/layout/sidebar';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const hydrated = useAuthStore((s) => s._hasHydrated);
 
   useEffect(() => {
-    if (!user) router.replace('/login');
-  }, [user, router]);
+    if (hydrated && !user) router.replace('/login');
+  }, [hydrated, user, router]);
+
+  if (!hydrated) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center">
+        <p className="text-sm text-text-secondary">Loading…</p>
+      </div>
+    );
+  }
 
   if (!user) {
     return (
       <div className="flex min-h-[100dvh] items-center justify-center">
-        <p className="text-sm text-text-secondary">Redirecting to sign in...</p>
+        <p className="text-sm text-text-secondary">Redirecting to sign in…</p>
       </div>
     );
   }

@@ -27,7 +27,7 @@ export class CreateFundTransferDto {
   amountEth!: string;
 }
 
-export class CreateSweepDto {
+export class CreateTransferNftDto {
   @IsString()
   chainKey!: string;
 
@@ -62,10 +62,10 @@ export class TransfersController {
     return this.create.executeFund(user.userId, dto);
   }
 
-  @Post('sweep-nft')
+  @Post('transfer-nft')
   @Throttle({ default: { limit: 10, ttl: 3600_000 } })
-  sweepAction(@CurrentUser() user: RequestUser, @Body() dto: CreateSweepDto) {
-    return this.create.executeSweep(user.userId, dto);
+  transferNftAction(@CurrentUser() user: RequestUser, @Body() dto: CreateTransferNftDto) {
+    return this.create.executeTransferNft(user.userId, dto);
   }
 
   @Get()

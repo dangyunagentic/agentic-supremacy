@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { KeyRound, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import type { ChainView, WalletView } from '@mintbot/shared';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/layout/page-header';
@@ -23,6 +23,8 @@ export default function WalletsPage() {
   const [mode, setMode] = useState<'generate' | 'import'>('generate');
   const [privateKey, setPrivateKey] = useState('');
   const [label, setLabel] = useState('');
+  const [renameTarget, setRenameTarget] = useState<WalletView | null>(null);
+  const [renameLabel, setRenameLabel] = useState('');
 
   const wallets = useQuery({
     queryKey: ['wallets'],
@@ -50,6 +52,18 @@ export default function WalletsPage() {
     mutationFn: (id: string) => api.delete(`/wallets/${id}`),
     onSuccess: () => {
       toast.success('Wallet removed');
+      void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const renameWallet = useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) =>
+      api.patch<WalletView>(`/wallets/${id}/label`, { label }),
+    onSuccess: () => {
+      toast.success('Wallet renamed');
+      setRenameTarget(null);
+      setRenameLabel('');
       void queryClient.invalidateQueries({ queryKey: ['wallets'] });
     },
     onError: (err: Error) => toast.error(err.message),
@@ -116,6 +130,17 @@ export default function WalletsPage() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label="Rename wallet"
+                        onClick={() => {
+                          setRenameTarget(wallet);
+                          setRenameLabel(wallet.label ?? '');
+                        }}
+                      >
+                        <Pencil className="size-3.5" aria-hidden />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         aria-label="Check balance"
                         loading={checkBalance.isPending && checkBalance.variables?.id === wallet.id}
                         onClick={() => checkBalance.mutate(wallet)}
@@ -170,6 +195,31 @@ export default function WalletsPage() {
             loading={createWallet.isPending}
           >
             {mode === 'generate' ? 'Generate wallet' : 'Import wallet'}
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog open={renameTarget !== null} onClose={() => setRenameTarget(null)} title="Rename wallet">
+        <div className="flex flex-col gap-4">
+          {renameTarget && (
+            <p className="mono text-xs text-text-secondary break-all">{renameTarget.address}</p>
+          )}
+          <Field label="Label">
+            <Input
+              value={renameLabel}
+              onChange={(e) => setRenameLabel(e.target.value)}
+              placeholder="main"
+              autoFocus
+            />
+          </Field>
+          <Button
+            onClick={() =>
+              renameTarget &&
+              renameWallet.mutate({ id: renameTarget.id, label: renameLabel.trim() })
+            }
+            loading={renameWallet.isPending}
+          >
+            Save label
           </Button>
         </div>
       </Dialog>

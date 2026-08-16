@@ -9,7 +9,7 @@ import type {
   TransferJobRepository,
 } from '../../domain/repositories/transfer.repository';
 import type { Paged } from '../../domain/entities/common.entity';
-import type { PrismaService } from './prisma.service';
+import { PrismaService } from './prisma.service';
 
 @Injectable()
 export class PrismaRpcEndpointRepository implements RpcEndpointRepository {
@@ -57,7 +57,7 @@ export class PrismaTransferJobRepository implements TransferJobRepository {
 
   async create(data: {
     userId: string;
-    kind: 'fund' | 'sweep_nft';
+    kind: 'fund' | 'transfer_nft';
     chainKey: string;
     fromWalletId?: string | null;
     toWalletIds: string[];

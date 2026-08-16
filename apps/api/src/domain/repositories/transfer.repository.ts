@@ -21,7 +21,7 @@ export interface RpcEndpointRepository {
 export interface TransferJobRepository {
   create(data: {
     userId: string;
-    kind: 'fund' | 'sweep_nft';
+    kind: 'fund' | 'transfer_nft';
     chainKey: string;
     fromWalletId?: string | null;
     toWalletIds: string[];

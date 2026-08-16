@@ -4,6 +4,7 @@ import type { WalletRepository } from '../../domain/repositories/wallet.reposito
 import type { ChainQueryPort } from '../../domain/ports/ports';
 import { NotFoundError, ValidationError } from '../common/app-error';
 import { formatEth } from '@mintbot/shared';
+import { toWalletView } from './create-wallet.use-case';
 
 @Injectable()
 export class ListWalletsUseCase {
@@ -34,6 +35,20 @@ export class DeleteWalletUseCase {
     if (!wallet) throw new NotFoundError('Wallet');
     if (!isAdmin && wallet.userId !== requesterId) throw new NotFoundError('Wallet');
     await this.wallets.delete(walletId);
+  }
+}
+
+@Injectable()
+export class RenameWalletUseCase {
+  constructor(@Inject(TOKENS.WalletRepository) private readonly wallets: WalletRepository) {}
+
+  async execute(walletId: string, requesterId: string, isAdmin: boolean, label: string | null) {
+    const wallet = await this.wallets.findById(walletId);
+    if (!wallet) throw new NotFoundError('Wallet');
+    if (!isAdmin && wallet.userId !== requesterId) throw new NotFoundError('Wallet');
+    const trimmed = label?.trim();
+    const updated = await this.wallets.updateLabel(walletId, trimmed ? trimmed : null);
+    return toWalletView(updated);
   }
 }
 

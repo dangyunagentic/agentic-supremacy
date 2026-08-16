@@ -1,7 +1,8 @@
 // prisma/schema.prisma
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -229,18 +230,18 @@ model RpcEndpoint {
 }
 
 // Bulk transfers executed by the worker: fund (ETH main -> many) and
-// sweep_nft (NFTs many -> one recipient). Results are stored inline.
+// transfer_nft (NFTs many -> one recipient). Results are stored inline.
 model TransferJob {
   id               String    @id @default(uuid())
   userId           String
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind             String // fund | sweep_nft
+  kind             String // fund | transfer_nft
   chainKey         String
   fromWalletId     String? // fund: source wallet
-  toWalletIds      String[] // fund: destinations; sweep: source wallets
-  recipientAddress String? // sweep: destination
+  toWalletIds      String[] // fund: destinations; transfer: source wallets
+  recipientAddress String? // transfer: destination
   amountEth        Float?
-  tokenContract    String? // sweep: collection address
+  tokenContract    String? // transfer: collection address
   fromBlock        Int?
   status           String    @default("queued")
   results          Json      @default("[]")

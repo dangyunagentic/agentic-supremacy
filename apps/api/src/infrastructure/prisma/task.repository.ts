@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { TaskEntity } from '../../domain/entities/task.entity';
 import type { TaskRepository, TaskListParams } from '../../domain/repositories/task.repository';
 import type { Paged } from '../../domain/entities/common.entity';
-import type { PrismaService } from './prisma.service';
+import { PrismaService } from './prisma.service';
 import type { Prisma, Task } from '@prisma/client';
 
 type TaskWhereInput = Prisma.TaskWhereInput;

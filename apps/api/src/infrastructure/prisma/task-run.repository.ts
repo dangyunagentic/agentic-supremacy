@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { TaskLogEntity, TaskResultEntity } from '../../domain/entities/task-run.entity';
 import type { TaskRunRepository } from '../../domain/repositories/task-run.repository';
 import type { Paged } from '../../domain/entities/common.entity';
-import type { PrismaService } from './prisma.service';
+import { PrismaService } from './prisma.service';
 
 @Injectable()
 export class PrismaTaskRunRepository implements TaskRunRepository {

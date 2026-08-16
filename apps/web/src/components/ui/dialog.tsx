@@ -9,12 +9,14 @@ export function Dialog({
   title,
   children,
   wide,
+  size,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   wide?: boolean;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
   useEffect(() => {
     if (!open) return;
@@ -36,7 +38,7 @@ export function Dialog({
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} rounded-[10px] border border-border bg-surface shadow-2xl`}
+        className={`w-full ${size === 'xl' ? 'max-w-4xl' : size === 'lg' ? 'max-w-3xl' : wide ? 'max-w-2xl' : 'max-w-md'} rounded-[10px] border border-border bg-surface shadow-2xl`}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-sm font-semibold">{title}</h2>
@@ -48,7 +50,7 @@ export function Dialog({
             <X className="size-4" />
           </button>
         </div>
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div className="max-h-[85vh] overflow-y-auto px-5 py-4">{children}</div>
       </div>
     </div>
   );

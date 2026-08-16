@@ -23,3 +23,9 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# deployment secrets — never commit
+DEPLOYMENT_NOTES.md
+docker-compose.vps.yml
+.env.production.local
+.env.staging

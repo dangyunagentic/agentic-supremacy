@@ -46,12 +46,12 @@ export default function TransfersPage() {
 
   const sweepMutation = useMutation({
     mutationFn: () =>
-      api.post<TransferJobView>('/transfers/sweep-nft', {
+      api.post<TransferJobView>('/transfers/transfer-nft', {
         ...sweep,
         fromBlock: sweep.fromBlock ? Number(sweep.fromBlock) : undefined,
       }),
     onSuccess: (job) => {
-      toast.success(`Sweep job queued: ${job.targetCount} wallets`);
+      toast.success(`Transfer job queued: ${job.targetCount} wallets`);
       invalidate();
     },
     onError: (err: Error) => toast.error(err.message),
@@ -78,7 +78,7 @@ export default function TransfersPage() {
     <>
       <PageHeader
         title="Transfers"
-        description="Fund worker wallets from a main wallet, or sweep minted NFTs to one recipient"
+        description="Fund worker wallets from a main wallet, or transfer minted NFTs to one recipient"
       />
 
       {/* Tabs */}
@@ -86,7 +86,7 @@ export default function TransfersPage() {
         {(
           [
             { key: 'fund' as Tab, label: 'Fund wallets', icon: Banknote },
-            { key: 'sweep' as Tab, label: 'Sweep NFTs', icon: ImageIcon },
+            { key: 'sweep' as Tab, label: 'Transfer NFTs', icon: ImageIcon },
           ]
         ).map(({ key, label, icon: Icon }) => (
           <button
@@ -203,7 +203,7 @@ export default function TransfersPage() {
                   className="mono"
                 />
               </Field>
-              <Field label="Token contract" hint="The NFT collection address to sweep">
+              <Field label="Token contract" hint="The NFT collection address to transfer">
                 <Input
                   value={sweep.tokenContract}
                   onChange={(e) => setSweep({ ...sweep, tokenContract: e.target.value })}
@@ -260,7 +260,7 @@ export default function TransfersPage() {
               }
               onClick={() => sweepMutation.mutate()}
             >
-              Sweep NFTs from {sweep.fromWalletIds.length} wallet(s)
+              Transfer NFTs from {sweep.fromWalletIds.length} wallet(s)
             </Button>
           </CardContent>
         </Card>
@@ -294,7 +294,7 @@ export default function TransfersPage() {
                   <TR key={job.id}>
                     <TD>
                       <Badge tone={job.kind === 'fund' ? 'accent' : 'neutral'}>
-                        {job.kind === 'fund' ? 'fund ETH' : 'sweep NFT'}
+                        {job.kind === 'fund' ? 'fund ETH' : 'transfer NFT'}
                       </Badge>
                     </TD>
                     <TD className="text-text-secondary">{job.chainKey}</TD>

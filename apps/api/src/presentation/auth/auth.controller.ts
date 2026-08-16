@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { JwtAuthGuard } from '../shared/jwt.strategy';
+import { Role } from '@mintbot/shared';
+import { JwtAuthGuard, Public } from '../shared/jwt.strategy';
 import { CurrentUser } from '../shared/current-user.decorator';
+import { Roles, RolesGuard } from '../shared/roles.guard';
 import type { RequestUser } from '../shared/jwt.strategy';
 import { LoginDto, RefreshDto, RegisterDto } from '../dto/auth.dto';
 import { LoginUseCase, MeUseCase, RefreshUseCase } from '../../application/auth/login.use-case';
@@ -19,17 +21,21 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
   @Throttle({ default: { limit: 3, ttl: 3600_000 } })
   registerAction(@Body() dto: RegisterDto) {
     return this.register.execute(dto);
   }
 
+  @Public()
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   loginAction(@Body() dto: LoginDto) {
     return this.login.execute(dto.email, dto.password);
   }
 
+  @Public()
   @Post('refresh')
   refreshAction(@Body() dto: RefreshDto) {
     return this.refresh.execute(dto.refreshToken);

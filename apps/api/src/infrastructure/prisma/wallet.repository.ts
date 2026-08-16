@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { WalletEntity } from '../../domain/entities/wallet.entity';
 import type { WalletRepository } from '../../domain/repositories/wallet.repository';
 import type { Paged } from '../../domain/entities/common.entity';
-import type { PrismaService } from './prisma.service';
+import { PrismaService } from './prisma.service';
 import type { Wallet } from '@prisma/client';
 
 function toEntity(row: Wallet): WalletEntity {
@@ -61,6 +61,11 @@ export class PrismaWalletRepository implements WalletRepository {
       limit: params.limit,
       totalPages: Math.max(1, Math.ceil(total / params.limit)),
     };
+  }
+
+  async updateLabel(id: string, label: string | null) {
+    const row = await this.prisma.wallet.update({ where: { id }, data: { label } });
+    return toEntity(row);
   }
 
   async delete(id: string) {

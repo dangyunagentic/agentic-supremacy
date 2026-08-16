@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { toast } from 'sonner';
 import { Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -98,12 +97,6 @@ export default function LoginPage() {
           <Button type="submit" loading={loading} className="mt-1 w-full">
             Sign in
           </Button>
-          <p className="text-center text-sm text-text-secondary">
-            No account?{' '}
-            <Link href="/register" className="text-accent hover:underline">
-              Create one
-            </Link>
-          </p>
         </form>
       </div>
     </div>

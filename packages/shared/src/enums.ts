@@ -57,7 +57,7 @@ export type WalletResultStatus = (typeof WalletResultStatus)[keyof typeof Wallet
 export const LogLevel = { Info: 'info', Warn: 'warn', Error: 'error', Success: 'success' } as const;
 export type LogLevel = (typeof LogLevel)[keyof typeof LogLevel];
 
-export const TransferKind = { Fund: 'fund', SweepNft: 'sweep_nft' } as const;
+export const TransferKind = { Fund: 'fund', TransferNft: 'transfer_nft' } as const;
 export type TransferKind = (typeof TransferKind)[keyof typeof TransferKind];
 
 export const TransferStatus = {

@@ -20,7 +20,7 @@ export interface CreateFundTransferInput {
   amountEth: string; // decimal ETH, same amount to every destination
 }
 
-export interface CreateSweepInput {
+export interface CreateTransferNftInput {
   chainKey: string;
   fromWalletIds: string[]; // wallets holding the NFTs
   recipientAddress: string;
@@ -82,8 +82,8 @@ export class CreateTransferUseCase {
     return toViewInternal(job, source[0].address);
   }
 
-  /** Sweep: move NFTs held by the source wallets to one recipient. */
-  async executeSweep(userId: string, input: CreateSweepInput): Promise<TransferJobView> {
+  /** Transfer NFTs: move NFTs held by the source wallets to one recipient. */
+  async executeTransferNft(userId: string, input: CreateTransferNftInput): Promise<TransferJobView> {
     await this.assertChain(input.chainKey);
     if (!isAddressShared(input.recipientAddress)) throw new ValidationError('Invalid recipient address');
     if (!isAddressShared(input.tokenContract)) throw new ValidationError('Invalid token contract address');
@@ -91,7 +91,7 @@ export class CreateTransferUseCase {
 
     const job = await this.transfers.create({
       userId,
-      kind: TransferKind.SweepNft,
+      kind: TransferKind.TransferNft,
       chainKey: input.chainKey,
       toWalletIds: sources.map((w) => w.id),
       recipientAddress: input.recipientAddress.toLowerCase(),

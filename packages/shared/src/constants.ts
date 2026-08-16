@@ -103,9 +103,11 @@ export const ENGINE_DEFAULTS = {
 export const PRE_FLIGHT_LEAD_MS = 60_000; // T-60s
 export const PRE_SIGN_LEAD_MS = 10_000; // T-10s
 
-// Max wallets per task, by wallet mode (from the PRD).
+// Max wallets per task, by wallet mode. Self-funded & sponsored are unlimited.
+// `Infinity` keeps the `walletIds.length > limit` guard inert while still being
+// a valid number for the `Record<string, number>` shape.
 export const MAX_WALLETS_PER_TASK: Record<string, number> = {
   single: 1,
-  self_funded: 10,
-  sponsored: 25,
+  self_funded: Infinity,
+  sponsored: Infinity,
 };

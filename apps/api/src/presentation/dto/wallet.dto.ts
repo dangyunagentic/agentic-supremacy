@@ -17,3 +17,10 @@ export class CreateWalletDto {
   @IsString()
   chainKey?: string;
 }
+
+export class RenameWalletDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  label?: string;
+}

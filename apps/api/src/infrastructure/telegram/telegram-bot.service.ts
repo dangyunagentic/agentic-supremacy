@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { Telegraf, type Context as TelegrafContext } from 'telegraf';
 import { Role, TaskStatus, shortAddress } from '@mintbot/shared';
 import { TOKENS } from '../../domain/tokens';
@@ -29,7 +29,7 @@ export class TelegramBotService implements OnModuleDestroy {
     @Inject(TOKENS.TaskRepository) private readonly tasks: TaskRepository,
     @Inject(TOKENS.WalletRepository) private readonly wallets: WalletRepository,
     @Inject(TOKENS.TelegramLink) private readonly links: TelegramLinkPort,
-    @Inject(TOKENS.Notifier) private readonly notifier: NotifierPort,
+    @Inject(forwardRef(() => TOKENS.Notifier)) private readonly notifier: NotifierPort,
     private readonly createWallet: CreateWalletUseCase,
     private readonly getStats: GetAdminStatsUseCase,
     private readonly updateUser: AdminUpdateUserUseCase,

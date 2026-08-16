@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle2, Layers, Plus, Timer, XCircle } from 'lucide-react';
@@ -14,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/lib/auth-store';
+import { NewTaskDialog } from '@/components/tasks/new-task-dialog';
 
 interface DashboardStats {
   totalTasks: number;
@@ -25,6 +27,7 @@ interface DashboardStats {
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === 'admin';
+  const [createOpen, setCreateOpen] = useState(false);
 
   const tasks = useQuery({
     queryKey: ['tasks'],
@@ -64,12 +67,10 @@ export default function DashboardPage() {
         title="Dashboard"
         description={isAdmin ? 'System-wide mint activity' : 'Your mint activity at a glance'}
         actions={
-          <Link href="/tasks/new">
-            <Button size="sm">
-              <Plus className="size-4" aria-hidden />
-              New task
-            </Button>
-          </Link>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" aria-hidden />
+            New task
+          </Button>
         }
       />
 
@@ -98,12 +99,10 @@ export default function DashboardPage() {
             title="Nothing running"
             description="No scheduled or executing tasks. Create one and the engine handles the rest."
             action={
-              <Link href="/tasks/new">
-                <Button size="sm" variant="secondary">
-                  <Layers className="size-4" aria-hidden />
-                  Create your first task
-                </Button>
-              </Link>
+              <Button size="sm" variant="secondary" onClick={() => setCreateOpen(true)}>
+                <Layers className="size-4" aria-hidden />
+                Create your first task
+              </Button>
             }
           />
         ) : (
@@ -141,6 +140,8 @@ export default function DashboardPage() {
           </CardContent>
         )}
       </Card>
+
+      <NewTaskDialog open={createOpen} onClose={() => setCreateOpen(false)} />
     </>
   );
 }

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { UserEntity, SafeUser } from '../../domain/entities/user.entity';
 import type { UserRepository } from '../../domain/repositories/user.repository';
 import type { Paged } from '../../domain/entities/common.entity';
-import type { PrismaService } from './prisma.service';
+import { PrismaService } from './prisma.service';
 import type { Prisma, User } from '@prisma/client';
 
 type UserWhereInput = Prisma.UserWhereInput;

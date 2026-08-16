@@ -18,6 +18,8 @@ FROM node:20-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app .
-RUN corepack enable && pnpm install --frozen-lockfile --prod
+RUN corepack enable && pnpm install --frozen-lockfile --prod && \
+    apt-get update -y && apt-get install -y --no-install-recommends openssl ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 EXPOSE 3000
-CMD ["node", "apps/api/dist/main.js"]
+CMD ["node", "apps/api/dist/src/main.js"]

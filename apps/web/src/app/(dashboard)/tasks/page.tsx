@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -15,9 +16,11 @@ import { Card } from '@/components/ui/card';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 import { TableSkeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/stat-card';
+import { NewTaskDialog } from '@/components/tasks/new-task-dialog';
 
 export default function TasksPage() {
   const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
 
   const tasks = useQuery({
     queryKey: ['tasks'],
@@ -40,12 +43,10 @@ export default function TasksPage() {
         title="Tasks"
         description="Every mint task with live status"
         actions={
-          <Link href="/tasks/new">
-            <Button size="sm">
-              <Plus className="size-4" aria-hidden />
-              New task
-            </Button>
-          </Link>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="size-4" aria-hidden />
+            New task
+          </Button>
         }
       />
 
@@ -57,9 +58,9 @@ export default function TasksPage() {
             title="No tasks yet"
             description="Create a mint task to schedule pre-signed transactions against a SeaDrop stage."
             action={
-              <Link href="/tasks/new">
-                <Button size="sm" variant="secondary">Create a task</Button>
-              </Link>
+              <Button size="sm" variant="secondary" onClick={() => setCreateOpen(true)}>
+                Create a task
+              </Button>
             }
           />
         ) : (
@@ -114,6 +115,8 @@ export default function TasksPage() {
           </Table>
         )}
       </Card>
+
+      <NewTaskDialog open={createOpen} onClose={() => setCreateOpen(false)} />
     </>
   );
 }

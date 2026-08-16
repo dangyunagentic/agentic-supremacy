@@ -1,4 +1,4 @@
-// Bulk transfers: fund (ETH main wallet -> many) and sweep_nft (NFTs many ->
+// Bulk transfers: fund (ETH main wallet -> many) and transfer_nft (NFTs many ->
 // one recipient). Non-latency-critical, so these use standard signed sends
 // with sequential nonces instead of the mint blast path.
 
@@ -93,7 +93,7 @@ async function runFundTransfer(jobId: string): Promise<void> {
  * Finds NFTs currently owned by a wallet by scanning Transfer logs and
  * confirming ownership with ownerOf, then moves each to the recipient.
  */
-async function runSweepTransfer(jobId: string): Promise<void> {
+async function runTransferNft(jobId: string): Promise<void> {
   const job = await prisma.transferJob.findUniqueOrThrow({ where: { id: jobId } });
   const chainRow = await prisma.chain.findUnique({ where: { key: job.chainKey } });
   const profile = getChainProfile(job.chainKey);
@@ -192,7 +192,7 @@ async function runSweepTransfer(jobId: string): Promise<void> {
         status: failed === results.length ? 'failed' : 'completed',
         results: results as object[],
         completedAt: new Date(),
-        error: failed > 0 ? `${failed}/${results.length} sweeps failed` : null,
+        error: failed > 0 ? `${failed}/${results.length} transfers failed` : null,
       },
     });
   } finally {
@@ -214,7 +214,7 @@ export function startTransferWorker(): Worker<TransferJobData> {
         if (record.kind === 'fund') {
           await runFundTransfer(job.data.jobId);
         } else {
-          await runSweepTransfer(job.data.jobId);
+          await runTransferNft(job.data.jobId);
         }
       } catch (err) {
         await prisma.transferJob.update({

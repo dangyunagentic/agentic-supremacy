@@ -5,10 +5,11 @@ import {
   DeleteWalletUseCase,
   GetWalletBalanceUseCase,
   ListWalletsUseCase,
+  RenameWalletUseCase,
 } from '../../application/wallets/wallet.use-cases';
 
 @Module({
-  providers: [CreateWalletUseCase, ListWalletsUseCase, DeleteWalletUseCase, GetWalletBalanceUseCase],
+  providers: [CreateWalletUseCase, ListWalletsUseCase, DeleteWalletUseCase, GetWalletBalanceUseCase, RenameWalletUseCase],
   controllers: [WalletsController],
 })
 export class WalletsModule {}
