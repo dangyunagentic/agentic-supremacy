@@ -2,7 +2,10 @@
 
 import { useAuthStore } from './auth-store';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+// Use a relative base so requests go through the same origin (HTTPS) and the
+// reverse proxy forwards /api/* to the API service. Avoids mixed-content
+// blocking when the dashboard is served over HTTPS.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 export class ApiError extends Error {
   constructor(
