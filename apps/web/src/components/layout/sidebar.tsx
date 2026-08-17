@@ -31,6 +31,7 @@ const userNav = [
   { href: '/transfers', label: 'Transfers', icon: ArrowLeftRight },
   { href: '/wallets', label: 'Wallets', icon: Wallet },
   { href: '/rpc', label: 'RPC endpoints', icon: Gauge },
+  { href: '/chains', label: 'Chains', icon: Blocks },
   { href: '/profile', label: 'Profile', icon: UserCircle },
 ];
 

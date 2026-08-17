@@ -6,6 +6,7 @@ import type {
   ChainRepository,
 } from '../../domain/repositories/system.repository';
 import { NotFoundError, ValidationError, ConflictError } from '../common/app-error';
+import { assertSafePublicUrl } from '../../infrastructure/security/ssrf-guard';
 
 @Injectable()
 export class ListChainsUseCase {
@@ -29,7 +30,7 @@ export class CreateChainUseCase {
   ) {}
 
   async execute(
-    adminId: string,
+    actorId: string,
     input: {
       key: string;
       chainId: number;
@@ -48,8 +49,18 @@ export class CreateChainUseCase {
       throw new ValidationError('Invalid chain ID');
     }
     if (await this.chains.findByKey(input.key)) throw new ConflictError('Chain key already exists');
-    const rpcs = input.publicRpcs.filter((u) => /^https?:\/\//.test(u));
+
+    // RPC URLs are consumed server-side (API balance/drop lookups + worker
+    // execution), so every user-supplied URL must clear the SSRF guard.
+    const rpcs = await this.validateRpcUrls(input.publicRpcs);
     if (rpcs.length === 0) throw new ValidationError('At least one valid RPC URL is required');
+
+    let defaultPrivateRpc: string | null = null;
+    if (input.defaultPrivateRpc?.trim()) {
+      const validated = await this.validateRpcUrls([input.defaultPrivateRpc]);
+      defaultPrivateRpc = validated[0] ?? null;
+    }
+
     const seadrop = input.seadropAddress?.trim() || SEADROP_ADDRESS;
     if (!isAddress(seadrop)) throw new ValidationError('Invalid SeaDrop address');
 
@@ -60,18 +71,34 @@ export class CreateChainUseCase {
       explorer: input.explorer,
       nativeSymbol: input.nativeSymbol,
       publicRpcs: rpcs,
-      defaultPrivateRpc: input.defaultPrivateRpc ?? null,
+      defaultPrivateRpc,
       seadropAddress: seadrop,
       isActive: true,
     });
     await this.audit.record({
-      adminId,
+      adminId: actorId,
       action: 'chain.create',
       targetType: 'chain',
       targetId: chain.key,
       metadata: { chainId: chain.chainId },
     });
     return chain;
+  }
+
+  /** Filters to http(s) URLs, normalizes, and rejects any that fail the SSRF guard. */
+  private async validateRpcUrls(urls: string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const raw of urls) {
+      const url = raw.trim().replace(/\/+$/, '');
+      if (!/^https?:\/\//.test(url)) continue;
+      try {
+        await assertSafePublicUrl(url);
+      } catch (err) {
+        throw new ValidationError(`RPC URL rejected: ${(err as Error).message}`);
+      }
+      out.push(url);
+    }
+    return out;
   }
 }
 
@@ -91,7 +118,7 @@ export class UpdateChainUseCase {
     if (typeof input.explorer === 'string') patch.explorer = input.explorer;
     if (typeof input.nativeSymbol === 'string') patch.nativeSymbol = input.nativeSymbol;
     if (Array.isArray(input.publicRpcs)) {
-      const rpcs = (input.publicRpcs as string[]).filter((u) => /^https?:\/\//.test(u));
+      const rpcs = await this.validateRpcUrls(input.publicRpcs as string[]);
       if (rpcs.length === 0) throw new ValidationError('At least one valid RPC URL is required');
       patch.publicRpcs = rpcs;
     }
@@ -106,6 +133,22 @@ export class UpdateChainUseCase {
       metadata: patch as Record<string, unknown>,
     });
     return updated;
+  }
+
+  /** Filters to http(s) URLs, normalizes, and rejects any that fail the SSRF guard. */
+  private async validateRpcUrls(urls: string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const raw of urls) {
+      const url = raw.trim().replace(/\/+$/, '');
+      if (!/^https?:\/\//.test(url)) continue;
+      try {
+        await assertSafePublicUrl(url);
+      } catch (err) {
+        throw new ValidationError(`RPC URL rejected: ${(err as Error).message}`);
+      }
+      out.push(url);
+    }
+    return out;
   }
 }
 
