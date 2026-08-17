@@ -4,6 +4,7 @@ import { TOKENS } from '../../domain/tokens';
 import type { RpcEndpointRepository } from '../../domain/repositories/transfer.repository';
 import type { ChainQueryPort } from '../../domain/ports/ports';
 import { NotFoundError, ValidationError } from '../common/app-error';
+import { assertSafePublicUrl } from '../../infrastructure/security/ssrf-guard';
 
 const KNOWN_PROVIDERS = ['alchemy', 'quicknode', 'drpc', 'custom'];
 
@@ -19,6 +20,11 @@ export class CreateRpcEndpointUseCase {
   ): Promise<RpcEndpointView> {
     const url = input.url.trim().replace(/\/+$/, '');
     if (!/^https?:\/\//.test(url)) throw new ValidationError('RPC URL must start with http(s)://');
+    try {
+      await assertSafePublicUrl(url);
+    } catch (err) {
+      throw new ValidationError(`RPC URL rejected: ${(err as Error).message}`);
+    }
     if (input.provider && !KNOWN_PROVIDERS.includes(input.provider)) {
       throw new ValidationError(`Provider must be one of: ${RpcProviderValues.join(', ')}`);
     }
@@ -78,6 +84,7 @@ export class PingRpcEndpointUseCase {
 
     let latency: number;
     try {
+      await assertSafePublicUrl(endpoint.url);
       latency = await this.chainQuery.pingRpc(endpoint.url);
     } catch (err) {
       throw new ValidationError(`Ping failed: ${(err as Error).message}`);

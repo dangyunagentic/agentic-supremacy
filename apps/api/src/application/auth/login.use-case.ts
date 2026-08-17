@@ -17,7 +17,15 @@ export class LoginUseCase {
     const value = identifier.trim();
     let user = await this.users.findByEmail(value.toLowerCase());
     if (!user) user = await this.users.findByUsername(value);
-    if (!user || !(await this.hasher.compare(password, user.passwordHash))) {
+
+    // Constant-ish response regardless of whether the account exists. When the
+    // user is absent we still run a bcrypt compare against a dummy hash so the
+    // timing profile matches the "wrong password" path — no username enumeration
+    // via response-time side channel.
+    const DUMMY_HASH = '$2a$12$YQqz/h16CtJVmzURxyMpXuWoJQJTniqrPcJvajp54W0j3.vRqg5qq';
+    const hash = user?.passwordHash ?? DUMMY_HASH;
+    const ok = await this.hasher.compare(password, hash);
+    if (!user || !ok) {
       throw new UnauthorizedError('Invalid username/email or password');
     }
     const safe = assertActive(user);

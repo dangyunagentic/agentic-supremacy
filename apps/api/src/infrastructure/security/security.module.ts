@@ -3,13 +3,14 @@ import { JwtModule } from '@nestjs/jwt';
 import { BcryptPasswordHasher } from './bcrypt-hasher';
 import { JwtTokenService } from './jwt-token.service';
 import { AesGcmKeyEncryption } from './aes-gcm-encryption';
+import { jwtSecret } from './require-secrets';
 import { TOKENS } from '../../domain/tokens';
 
 @Global()
 @Module({
   imports: [
     JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'dev-only-secret-change-me',
+      secret: jwtSecret(),
       signOptions: { issuer: 'mintbot' },
     }),
   ],

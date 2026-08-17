@@ -20,7 +20,10 @@ export class InMemoryTelegramLinkStore implements TelegramLinkPort {
 
   createCode(userId: string): { code: string; expiresAt: Date } {
     this.sweep();
-    const code = randomBytes(4).toString('hex').toUpperCase();
+    // 12 random bytes → 24 hex chars (~96 bits). The old 4-byte code was only
+    // 32-bit — brute-forceable inside the 15-minute TTL. 96 bits is impractical
+    // to enumerate even without rate limiting.
+    const code = randomBytes(12).toString('hex').toUpperCase();
     const expiresAt = Date.now() + TTL_MS;
     this.codes.set(code, { userId, expiresAt });
     return { code, expiresAt: new Date(expiresAt) };

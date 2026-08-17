@@ -2,6 +2,7 @@ import { ExecutionContext, Injectable, SetMetadata, UnauthorizedException } from
 import { Reflector } from '@nestjs/core';
 import { AuthGuard, PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { jwtSecret } from '../../infrastructure/security/require-secrets';
 
 export const IS_PUBLIC_KEY = 'app:is-public';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
@@ -22,7 +23,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: process.env.JWT_SECRET ?? 'dev-only-secret-change-me',
+      secretOrKey: jwtSecret(),
     });
   }
 

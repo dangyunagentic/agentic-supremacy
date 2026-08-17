@@ -27,7 +27,16 @@ export interface AuthedSocket extends Socket {
  * API, then join `task:<id>` rooms. The worker publishes execution events on
  * Redis; this gateway relays them to subscribed sockets.
  */
-@WebSocketGateway({ namespace: '/', cors: { origin: true, credentials: true } })
+@WebSocketGateway({
+  namespace: '/',
+  cors: {
+    origin: (process.env.WEB_ORIGIN ?? 'http://localhost:3000')
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean),
+    credentials: false,
+  },
+})
 export class TasksGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(TasksGateway.name);
   private readonly sub: IORedis;

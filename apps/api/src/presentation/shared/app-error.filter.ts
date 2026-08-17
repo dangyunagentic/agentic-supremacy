@@ -33,9 +33,11 @@ export class AppErrorFilter implements ExceptionFilter {
       return;
     }
 
+    // Never leak internal exception details (paths, stack fragments, SQL) to
+    // the client — a stack trace is an attacker's roadmap. Log server-side only.
     const message = exception instanceof Error ? exception.message : 'Internal error';
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-      error: { code: 'INTERNAL_ERROR', message },
+      error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
     });
   }
 }
