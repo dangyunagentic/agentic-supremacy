@@ -1,0 +1,37 @@
+# Dependencies (reinstalled in Docker)
+node_modules/
+**/node_modules/
+
+# Build outputs (regenerated in Docker)
+dist/
+**/dist/
+.next/
+**/.next/
+.turbo/
+
+# VCS & CI
+.git/
+.gitignore
+**/.git/
+
+# Secrets & env — NEVER in image
+.env
+.env.*
+!.env.example
+DEPLOYMENT_NOTES.md
+docker-compose*.yml
+docker-compose*.yaml
+
+# Docs & misc
+*.md
+LICENSE
+.editorconfig
+.prettierrc*
+.eslintrc*
+.husky/
+.vscode/
+.idea/
+
+# OS junk
+.DS_Store
+Thumbs.db
