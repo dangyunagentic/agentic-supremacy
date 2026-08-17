@@ -27,5 +27,6 @@ Thumbs.db
 # deployment secrets — never commit
 DEPLOYMENT_NOTES.md
 docker-compose.vps.yml
+docker-compose.vps.yml.bak
 .env.production.local
 .env.staging

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="#0a0a0c" stroke="#26262e" stroke-width="1.5"/>
+  <g fill="#f5f5f7">
+    <!-- rear horn -->
+    <polygon points="8,22 18,2 22,16 12,26"/>
+    <!-- front horn -->
+    <polygon points="16,14 27,0 29,14 20,22"/>
+    <!-- crown -->
+    <polygon points="18,18 32,6 41,16 28,22"/>
+    <!-- brow -->
+    <polygon points="26,18 39,12 41,22 30,26"/>
+    <!-- snout -->
+    <polygon points="36,20 52,24 50,33 38,28"/>
+    <!-- upper jaw -->
+    <polygon points="34,26 47,31 42,39 30,33"/>
+    <!-- lower jaw -->
+    <polygon points="26,34 38,41 30,50 20,41"/>
+    <!-- chin spike -->
+    <polygon points="20,41 30,50 16,52"/>
+    <!-- cheek -->
+    <polygon points="16,24 28,30 22,39 14,34"/>
+    <!-- neck -->
+    <polygon points="8,30 18,37 14,48 6,42"/>
+  </g>
+  <g fill="#0a0a0c">
+    <!-- eye -->
+    <polygon points="32,19 38,18 35,26"/>
+    <!-- mouth gap -->
+    <polygon points="34,31 43,34 38,39"/>
+    <!-- fang -->
+    <polygon points="41,32 47,35 42,40"/>
+  </g>
+</svg>

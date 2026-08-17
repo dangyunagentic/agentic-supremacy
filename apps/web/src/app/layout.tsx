@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'Mintbot',
+  title: 'Ryunix',
   description: 'SeaDrop NFT mint automation: schedule, execute and monitor across chains.',
 };
 

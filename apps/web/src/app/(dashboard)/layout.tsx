@@ -45,7 +45,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         >
           <Menu className="size-5" />
         </button>
-        <span className="text-sm font-semibold">Mintbot</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/ryunix-logo.svg" alt="Ryunix logo" className="size-5 rounded-[6px]" />
+        <span className="text-sm font-semibold">Ryunix</span>
       </header>
 
       {/* Main content — offset by sidebar width on desktop, full width on mobile */}

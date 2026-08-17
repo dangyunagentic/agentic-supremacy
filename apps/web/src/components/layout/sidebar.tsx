@@ -8,7 +8,6 @@ import {
   ArrowLeftRight,
   BadgeCheck,
   Blocks,
-  Coins,
   Gauge,
   Layers,
   LayoutDashboard,
@@ -113,11 +112,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
       >
         {/* Brand */}
         <div className="flex h-16 shrink-0 items-center gap-2.5 border-b border-border px-5">
-          <span className="flex size-8 items-center justify-center rounded-[8px] bg-accent-subtle text-accent">
-            <Coins className="size-4" aria-hidden />
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/ryunix-logo.svg"
+            alt="Ryunix logo"
+            className="size-8 shrink-0 rounded-[8px]"
+          />
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="text-sm font-semibold">Mintbot</p>
+            <p className="text-sm font-semibold">Ryunix</p>
             <p className="text-[11px] text-text-muted">SeaDrop automation</p>
           </div>
           <button
