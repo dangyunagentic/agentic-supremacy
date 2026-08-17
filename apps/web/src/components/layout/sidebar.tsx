@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/auth-store';
 import { closeSocket } from '@/lib/socket';
+import { logoutServer } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const userNav = [
@@ -62,6 +63,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
   const onLogout = () => {
     closeSocket();
+    void logoutServer();
     logout();
     router.push('/login');
   };

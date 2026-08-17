@@ -28,13 +28,14 @@ model User {
   passwordHash String
   role         Role         @default(user)
   status       UserStatus   @default(active)
-  wallets      Wallet[]
-  tasks        Task[]
-  auditLogs    AuditLog[]
-  rpcEndpoints RpcEndpoint[]
-  transferJobs TransferJob[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  wallets       Wallet[]
+  tasks         Task[]
+  auditLogs     AuditLog[]
+  rpcEndpoints  RpcEndpoint[]
+  transferJobs  TransferJob[]
+  refreshTokens RefreshToken[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   @@index([telegramId])
 }
@@ -237,6 +238,23 @@ model RpcEndpoint {
 
   @@index([userId])
   @@index([chainKey])
+}
+
+// Refresh tokens issued at login/register/refresh. Only the SHA-256 hash is
+// stored (never the raw token) so a DB leak cannot be replayed. Rotation +
+// revocation enable server-side logout and reuse detection.
+model RefreshToken {
+  id         String    @id @default(uuid())
+  tokenHash  String    @unique
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String? // tokenHash of the successor token (rotation chain)
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // Bulk transfers executed by the worker: fund (ETH main -> many) and

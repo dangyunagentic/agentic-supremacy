@@ -2,7 +2,12 @@ import { Module } from '@nestjs/common';
 import { JwtStrategy } from '../shared/jwt.strategy';
 import { AuthController } from './auth.controller';
 import { RegisterUseCase } from '../../application/auth/register.use-case';
-import { LoginUseCase, MeUseCase, RefreshUseCase } from '../../application/auth/login.use-case';
+import {
+  LoginUseCase,
+  LogoutUseCase,
+  MeUseCase,
+  RefreshUseCase,
+} from '../../application/auth/login.use-case';
 import { CreateTelegramPairCodeUseCase } from '../../application/auth/pair-telegram.use-case';
 
 @Module({
@@ -11,6 +16,7 @@ import { CreateTelegramPairCodeUseCase } from '../../application/auth/pair-teleg
     RegisterUseCase,
     LoginUseCase,
     RefreshUseCase,
+    LogoutUseCase,
     MeUseCase,
     CreateTelegramPairCodeUseCase,
   ],

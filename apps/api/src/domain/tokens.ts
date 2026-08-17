@@ -13,6 +13,7 @@ export const TOKENS = {
 
   PasswordHasher: 'PasswordHasherPort',
   TokenService: 'TokenServicePort',
+  RefreshTokenRepository: 'RefreshTokenRepositoryPort',
   KeyEncryption: 'KeyEncryptionPort',
   MintScheduler: 'MintSchedulerPort',
   TaskEventPublisher: 'TaskEventPublisherPort',

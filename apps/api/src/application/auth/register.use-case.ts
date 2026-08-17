@@ -46,8 +46,8 @@ export class RegisterUseCase {
     return this.toAuthResult(user);
   }
 
-  private toAuthResult(user: UserEntity): AuthResult {
-    return { user: toSafeUser(user), ...this.tokens.issuePair(toSafeUser(user)) };
+  private async toAuthResult(user: UserEntity): Promise<AuthResult> {
+    return { user: toSafeUser(user), ...(await this.tokens.issuePair(toSafeUser(user))) };
   }
 }
 

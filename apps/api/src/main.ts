@@ -18,6 +18,20 @@ async function bootstrap() {
     origin: allowedOrigins,
     credentials: false,
   });
+
+  // Rate limiting keys off `req.ip`. Trust proxy defaults to OFF (safe for
+  // direct exposure — X-Forwarded-For cannot be spoofed). When a reverse proxy
+  // (Caddy) is placed in front, set TRUST_PROXY to the proxy's subnet allowlist
+  // (e.g. "172.16.0.0/12") so the real client IP is used WITHOUT letting direct
+  // clients forge X-Forwarded-For. Never use `true` or a bare hop count.
+  const trustProxy = (process.env.TRUST_PROXY ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (trustProxy.length > 0) {
+    const expressApp = app.getHttpAdapter().getInstance();
+    expressApp.set('trust proxy', trustProxy);
+  }
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

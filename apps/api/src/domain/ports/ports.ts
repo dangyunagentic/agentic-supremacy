@@ -11,11 +11,28 @@ export interface TokenPair {
   refreshToken: string;
 }
 
-/** Issues and verifies JWTs. Implemented in infrastructure (@nestjs/jwt). */
+/** Result of a refresh-token rotation: the fresh refresh token + owning user id. */
+export interface RotationResult {
+  sub: string;
+  refreshToken: string;
+}
+
+/**
+ * Issues and verifies JWTs. Implemented in infrastructure (@nestjs/jwt).
+ * Refresh tokens are additionally persisted (hashed) so they can be rotated
+ * and revoked server-side.
+ */
 export interface TokenServicePort {
-  issuePair(user: SafeUser): TokenPair;
+  issuePair(user: SafeUser): Promise<TokenPair>;
+  /** Signs a short-lived access token only (role comes from the caller's user). */
+  issueAccess(user: SafeUser): Promise<string>;
   verifyAccess(token: string): Promise<{ sub: string; role: string }>;
-  verifyRefresh(token: string): Promise<{ sub: string }>;
+  /** Validates a refresh token, rotates it (one-time use) and returns the fresh token + sub. */
+  rotateRefresh(token: string): Promise<RotationResult>;
+  /** Revokes a single refresh token (logout). */
+  revokeRefresh(token: string): Promise<void>;
+  /** Revokes every refresh token for a user (forced logout everywhere). */
+  revokeAllForUser(userId: string): Promise<void>;
 }
 
 /** Encrypts wallet private keys at rest (AES-256-GCM + scrypt). */

@@ -4,6 +4,7 @@ import { PrismaUserRepository } from './user.repository';
 import { PrismaWalletRepository } from './wallet.repository';
 import { PrismaTaskRepository } from './task.repository';
 import { PrismaTaskRunRepository } from './task-run.repository';
+import { PrismaRefreshTokenRepository } from './refresh-token.repository';
 import {
   PrismaAuditLogRepository,
   PrismaChainRepository,
@@ -28,6 +29,7 @@ import { TOKENS } from '../../domain/tokens';
     { provide: TOKENS.SystemConfigRepository, useClass: PrismaSystemConfigRepository },
     { provide: TOKENS.RpcEndpointRepository, useClass: PrismaRpcEndpointRepository },
     { provide: TOKENS.TransferJobRepository, useClass: PrismaTransferJobRepository },
+    { provide: TOKENS.RefreshTokenRepository, useClass: PrismaRefreshTokenRepository },
   ],
   exports: [
     PrismaService,
@@ -40,6 +42,7 @@ import { TOKENS } from '../../domain/tokens';
     TOKENS.SystemConfigRepository,
     TOKENS.RpcEndpointRepository,
     TOKENS.TransferJobRepository,
+    TOKENS.RefreshTokenRepository,
   ],
 })
 export class PrismaModule {}

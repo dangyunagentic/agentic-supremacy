@@ -88,3 +88,24 @@ export const api = {
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };
+
+/**
+ * Revokes the current refresh token server-side (best-effort, fire-and-forget).
+ * Used on logout so a stolen token cannot be replayed afterward.
+ */
+export async function logoutServer(): Promise<void> {
+  const { accessToken, refreshToken } = useAuthStore.getState();
+  if (!refreshToken) return;
+  try {
+    await fetch(`${API_URL}/api/v1/auth/logout`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: accessToken ? `Bearer ${accessToken}` : '',
+      },
+      body: JSON.stringify({ refreshToken }),
+    });
+  } catch {
+    /* local logout still proceeds */
+  }
+}

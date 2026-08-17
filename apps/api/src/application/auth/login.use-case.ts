@@ -29,7 +29,7 @@ export class LoginUseCase {
       throw new UnauthorizedError('Invalid username/email or password');
     }
     const safe = assertActive(user);
-    return { user: safe, ...this.tokens.issuePair(safe) };
+    return { user: safe, ...(await this.tokens.issuePair(safe)) };
   }
 }
 
@@ -41,11 +41,23 @@ export class RefreshUseCase {
   ) {}
 
   async execute(refreshToken: string): Promise<AuthResult> {
-    const { sub } = await this.tokens.verifyRefresh(refreshToken);
+    // Rotation: this token is consumed and replaced. Reuse is detected by the
+    // token service and revokes the whole session family.
+    const { sub, refreshToken: next } = await this.tokens.rotateRefresh(refreshToken);
     const user = await this.users.findById(sub);
     if (!user) throw new UnauthorizedError('User no longer exists');
     const safe = assertActive(user);
-    return { user: safe, ...this.tokens.issuePair(safe) };
+    const accessToken = await this.tokens.issueAccess(safe);
+    return { user: safe, accessToken, refreshToken: next };
+  }
+}
+
+@Injectable()
+export class LogoutUseCase {
+  constructor(@Inject(TOKENS.TokenService) private readonly tokens: TokenServicePort) {}
+
+  async execute(refreshToken?: string): Promise<void> {
+    if (refreshToken) await this.tokens.revokeRefresh(refreshToken);
   }
 }
 

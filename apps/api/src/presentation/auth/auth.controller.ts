@@ -5,8 +5,13 @@ import { JwtAuthGuard, Public } from '../shared/jwt.strategy';
 import { CurrentUser } from '../shared/current-user.decorator';
 import { Roles, RolesGuard } from '../shared/roles.guard';
 import type { RequestUser } from '../shared/jwt.strategy';
-import { LoginDto, RefreshDto, RegisterDto } from '../dto/auth.dto';
-import { LoginUseCase, MeUseCase, RefreshUseCase } from '../../application/auth/login.use-case';
+import { LoginDto, LogoutDto, RefreshDto, RegisterDto } from '../dto/auth.dto';
+import {
+  LoginUseCase,
+  LogoutUseCase,
+  MeUseCase,
+  RefreshUseCase,
+} from '../../application/auth/login.use-case';
 import { RegisterUseCase } from '../../application/auth/register.use-case';
 import { CreateTelegramPairCodeUseCase } from '../../application/auth/pair-telegram.use-case';
 
@@ -16,6 +21,7 @@ export class AuthController {
     private readonly register: RegisterUseCase,
     private readonly login: LoginUseCase,
     private readonly refresh: RefreshUseCase,
+    private readonly logout: LogoutUseCase,
     private readonly me: MeUseCase,
     private readonly pairCode: CreateTelegramPairCodeUseCase,
   ) {}
@@ -39,6 +45,12 @@ export class AuthController {
   @Post('refresh')
   refreshAction(@Body() dto: RefreshDto) {
     return this.refresh.execute(dto.refreshToken);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  logoutAction(@Body() dto: LogoutDto) {
+    return this.logout.execute(dto?.refreshToken);
   }
 
   @Get('me')
