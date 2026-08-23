@@ -143,7 +143,8 @@ export default function RpcPage() {
                   <TH>Label</TH>
                   <TH>Provider</TH>
                   <TH>Tier</TH>
-                  <TH>Latency</TH>
+                  <TH>VPS latency</TH>
+                  <TH>RPC latency</TH>
                   <TH />
                 </TR>
               </THead>
@@ -161,9 +162,20 @@ export default function RpcPage() {
                       <Badge tone={ep.tier === 'paid' ? 'warning' : 'neutral'}>{ep.tier}</Badge>
                     </TD>
                     <TD>
-                      <Badge tone={latencyTone(ep.lastLatencyMs)}>
-                        {ep.lastLatencyMs !== null ? `${ep.lastLatencyMs} ms` : 'not probed'}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge tone={latencyTone(ep.vpsLatencyMs ?? ep.lastLatencyMs)}>
+                          {ep.vpsLatencyMs !== null ? `${ep.vpsLatencyMs} ms` : 'not probed'}
+                        </Badge>
+                        <span className="text-xs text-text-muted">from VPS</span>
+                      </div>
+                    </TD>
+                    <TD>
+                      <div className="flex items-center gap-2">
+                        <Badge tone={latencyTone(ep.rpcLatencyMs)}>
+                          {ep.rpcLatencyMs !== null ? `${ep.rpcLatencyMs} ms` : '—'}
+                        </Badge>
+                        <span className="text-xs text-text-muted">provider</span>
+                      </div>
                     </TD>
                     <TD>
                       <div className="flex items-center justify-end gap-1">

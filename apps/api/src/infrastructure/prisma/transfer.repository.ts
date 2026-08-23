@@ -41,7 +41,7 @@ export class PrismaRpcEndpointRepository implements RpcEndpointRepository {
     return rows as RpcEndpointEntity[];
   }
 
-  async update(id: string, data: Partial<Pick<RpcEndpointEntity, 'label' | 'lastLatencyMs' | 'isDefault'>>) {
+  async update(id: string, data: Partial<Pick<RpcEndpointEntity, 'label' | 'lastLatencyMs' | 'vpsLatencyMs' | 'rpcLatencyMs' | 'isDefault'>>) {
     const row = await this.prisma.rpcEndpoint.update({ where: { id }, data });
     return row as RpcEndpointEntity;
   }
@@ -62,7 +62,7 @@ export class PrismaTransferJobRepository implements TransferJobRepository {
     fromWalletId?: string | null;
     toWalletIds: string[];
     recipientAddress?: string | null;
-    amountEth?: number | null;
+    amountEth?: string | null;
     tokenContract?: string | null;
     fromBlock?: number | null;
   }): Promise<TransferJobEntity> {
@@ -130,7 +130,7 @@ export class PrismaTransferJobRepository implements TransferJobRepository {
     fromWalletId: string | null;
     toWalletIds: string[];
     recipientAddress: string | null;
-    amountEth: number | null;
+    amountEth: { toString(): string } | null;
     tokenContract: string | null;
     fromBlock: number | null;
     status: string;
@@ -142,6 +142,7 @@ export class PrismaTransferJobRepository implements TransferJobRepository {
   }): TransferJobEntity {
     return {
       ...row,
+      amountEth: row.amountEth != null ? row.amountEth.toString() : null,
       results: (row.results as TransferResultRow[]) ?? [],
     };
   }

@@ -14,7 +14,7 @@ export interface RpcEndpointRepository {
   }): Promise<RpcEndpointEntity>;
   findById(id: string): Promise<RpcEndpointEntity | null>;
   listByUser(userId: string, chainKey?: string): Promise<RpcEndpointEntity[]>;
-  update(id: string, data: Partial<Pick<RpcEndpointEntity, 'label' | 'lastLatencyMs' | 'isDefault'>>): Promise<RpcEndpointEntity>;
+  update(id: string, data: Partial<Pick<RpcEndpointEntity, 'label' | 'lastLatencyMs' | 'vpsLatencyMs' | 'rpcLatencyMs' | 'isDefault'>>): Promise<RpcEndpointEntity>;
   delete(id: string): Promise<void>;
 }
 
@@ -26,7 +26,7 @@ export interface TransferJobRepository {
     fromWalletId?: string | null;
     toWalletIds: string[];
     recipientAddress?: string | null;
-    amountEth?: number | null;
+    amountEth?: string | null;
     tokenContract?: string | null;
     fromBlock?: number | null;
   }): Promise<TransferJobEntity>;

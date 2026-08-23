@@ -69,12 +69,15 @@ export class EthersChainQuery implements ChainQueryPort {
     }
   }
 
-  /** Median eth_blockNumber round-trip over three probes, in milliseconds. */
-  async pingRpc(url: string): Promise<number> {
+  /** Median eth_blockNumber round-trip over three probes, in milliseconds.
+   *  vps = full round-trip from this server (network + provider processing),
+   *  rpc = time-to-first-byte (provider processing + upstream hop, excludes
+   *  the download of the response body). */
+  async pingRpc(url: string): Promise<{ vps: number; rpc: number }> {
     const body = JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 });
-    const samples: number[] = [];
+    const samples: { vps: number; rpc: number }[] = [];
     for (let i = 0; i < 3; i++) {
-      const t0 = Date.now();
+      const t0 = performance.now();
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -82,10 +85,17 @@ export class EthersChainQuery implements ChainQueryPort {
         signal: AbortSignal.timeout(5000),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const ttfb = performance.now() - t0;
       await res.json();
-      samples.push(Date.now() - t0);
+      const total = performance.now() - t0;
+      samples.push({ vps: total, rpc: ttfb });
     }
-    samples.sort((a, b) => a - b);
-    return samples[Math.floor(samples.length / 2)];
+    const byVps = [...samples].sort((a, b) => a.vps - b.vps);
+    const byRpc = [...samples].sort((a, b) => a.rpc - b.rpc);
+    const mid = Math.floor(samples.length / 2);
+    return {
+      vps: Math.round(byVps[mid].vps),
+      rpc: Math.round(byRpc[mid].rpc),
+    };
   }
 }

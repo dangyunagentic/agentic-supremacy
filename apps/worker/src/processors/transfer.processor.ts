@@ -16,6 +16,16 @@ export interface TransferJobData {
 
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
+/** Redact provider/RPC internals from error messages before storing them. */
+function sanitizeError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  // strip URLs that may embed API keys (https://.../v2/<key>, ?api-key=...)
+  const noUrls = raw.replace(/https?:\/\/[^\s"')\]]+/g, '[redacted-url]');
+  // strip hex strings that look like private keys or tx hashes (64 chars)
+  const noHex = noUrls.replace(/0x[a-fA-F0-9]{40,}/g, '[redacted-hex]');
+  return noHex.slice(0, 200);
+}
+
 const connection = new IORedis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
 });
@@ -69,7 +79,7 @@ async function runFundTransfer(jobId: string): Promise<void> {
           address: dest.address,
           txHash: null,
           status: 'failed',
-          detail: (err as Error).message.slice(0, 200),
+          detail: sanitizeError(err),
         });
       }
     }
@@ -180,7 +190,7 @@ async function runTransferNft(jobId: string): Promise<void> {
           address: source.address,
           txHash: null,
           status: 'failed',
-          detail: (err as Error).message.slice(0, 200),
+          detail: sanitizeError(err),
         });
       }
     }

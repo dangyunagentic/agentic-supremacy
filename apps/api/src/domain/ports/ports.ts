@@ -75,7 +75,7 @@ export interface ChainQueryPort {
   getNativeBalance(chainKey: string, address: string): Promise<bigint>;
   getPublicDropStart(chainKey: string, collection: string): Promise<number | null>;
   getPublicDrop(chainKey: string, collection: string): Promise<import('@mintbot/shared').PublicDropInfo | null>;
-  pingRpc(url: string): Promise<number>;
+  pingRpc(url: string): Promise<{ vps: number; rpc: number }>;
 }
 
 /** Allowlist/FCFS (GTD) eligibility lookups through the OpenSea API. */

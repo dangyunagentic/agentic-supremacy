@@ -9,6 +9,8 @@ export interface RpcEndpointEntity {
   provider: RpcProvider | string;
   tier: RpcTier | string;
   lastLatencyMs: number | null;
+  vpsLatencyMs: number | null;
+  rpcLatencyMs: number | null;
   isDefault: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -29,7 +31,7 @@ export interface TransferJobEntity {
   fromWalletId: string | null;
   toWalletIds: string[];
   recipientAddress: string | null;
-  amountEth: number | null;
+  amountEth: string | null;
   tokenContract: string | null;
   fromBlock: number | null;
   status: TransferStatus | string;

@@ -43,6 +43,7 @@ export class AuthController {
 
   @Public()
   @Post('refresh')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   refreshAction(@Body() dto: RefreshDto) {
     return this.refresh.execute(dto.refreshToken);
   }

@@ -245,7 +245,7 @@ export interface TransferJobView {
   fromWalletAddress: string | null;
   recipientAddress: string | null;
   targetCount: number;
-  amountEth: number | null;
+  amountEth: string | null;
   tokenContract: string | null;
   status: 'queued' | 'running' | 'completed' | 'failed';
   results: TransferResultEntry[];
@@ -264,6 +264,8 @@ export interface RpcEndpointView {
   provider: 'alchemy' | 'quicknode' | 'drpc' | 'custom';
   tier: 'free' | 'paid';
   lastLatencyMs: number | null;
+  vpsLatencyMs: number | null;
+  rpcLatencyMs: number | null;
   isDefault: boolean;
   createdAt: string;
 }

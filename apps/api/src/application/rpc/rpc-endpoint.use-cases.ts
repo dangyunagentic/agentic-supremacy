@@ -82,15 +82,24 @@ export class PingRpcEndpointUseCase {
     const endpoint = await this.endpoints.findById(id);
     if (!endpoint || endpoint.userId !== userId) throw new NotFoundError('RPC endpoint');
 
-    let latency: number;
+    let vpsLatencyMs: number;
+    let rpcLatencyMs: number;
     try {
       await assertSafePublicUrl(endpoint.url);
-      latency = await this.chainQuery.pingRpc(endpoint.url);
+      // Ping returns { vps, rpc } — vps = full round-trip from this server,
+      // rpc = time the RPC provider took to answer (excludes network hop).
+      const latency = await this.chainQuery.pingRpc(endpoint.url);
+      vpsLatencyMs = latency.vps;
+      rpcLatencyMs = latency.rpc;
     } catch (err) {
       throw new ValidationError(`Ping failed: ${(err as Error).message}`);
     }
 
-    const updated = await this.endpoints.update(id, { lastLatencyMs: latency });
+    const updated = await this.endpoints.update(id, {
+      lastLatencyMs: vpsLatencyMs,
+      vpsLatencyMs,
+      rpcLatencyMs,
+    });
     return toView(updated);
   }
 }
@@ -103,6 +112,8 @@ function toView(endpoint: {
   provider: string;
   tier: string;
   lastLatencyMs: number | null;
+  vpsLatencyMs: number | null;
+  rpcLatencyMs: number | null;
   isDefault: boolean;
   createdAt: Date;
 }): RpcEndpointView {
@@ -114,6 +125,8 @@ function toView(endpoint: {
     provider: endpoint.provider as RpcEndpointView['provider'],
     tier: endpoint.tier as RpcEndpointView['tier'],
     lastLatencyMs: endpoint.lastLatencyMs,
+    vpsLatencyMs: endpoint.vpsLatencyMs,
+    rpcLatencyMs: endpoint.rpcLatencyMs,
     isDefault: endpoint.isDefault,
     createdAt: endpoint.createdAt.toISOString(),
   };

@@ -76,7 +76,7 @@ export class CreateTransferUseCase {
       chainKey: input.chainKey,
       fromWalletId: source[0].id,
       toWalletIds: destinations.map((w) => w.id),
-      amountEth: Number(input.amountEth),
+      amountEth: input.amountEth.trim(),
     });
     await this.scheduler.scheduleTransfer(job.id);
     return toViewInternal(job, source[0].address);
