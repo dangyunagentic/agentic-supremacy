@@ -17,7 +17,7 @@ export class ChangePasswordUseCase {
     @Inject(TOKENS.PasswordHasher) private readonly hasher: PasswordHasherPort,
   ) {}
 
-  async execute(input: ChangePasswordInput): Promise<void> {
+  async execute(input: ChangePasswordInput): Promise<{ success: boolean }> {
     const user = await this.users.findById(input.userId);
     if (!user) throw new UnauthorizedError();
 
@@ -26,5 +26,6 @@ export class ChangePasswordUseCase {
 
     const passwordHash = await this.hasher.hash(input.newPassword);
     await this.users.update(input.userId, { passwordHash });
+    return { success: true };
   }
 }
