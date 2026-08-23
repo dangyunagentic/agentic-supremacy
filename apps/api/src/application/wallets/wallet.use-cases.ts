@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { TOKENS } from '../../domain/tokens';
 import type { WalletRepository } from '../../domain/repositories/wallet.repository';
-import type { ChainQueryPort } from '../../domain/ports/ports';
+import type { ChainQueryPort, KeyEncryptionPort } from '../../domain/ports/ports';
 import { NotFoundError, ValidationError } from '../common/app-error';
 import { formatEth } from '@mintbot/shared';
 import { toWalletView } from './create-wallet.use-case';
@@ -67,5 +67,30 @@ export class GetWalletBalanceUseCase {
 
     const wei = await this.chainQuery.getNativeBalance(chainKey, wallet.address);
     return { address: wallet.address, chainKey, balanceWei: wei.toString(), balance: formatEth(wei) };
+  }
+}
+
+@Injectable()
+export class ExportWalletKeyUseCase {
+  constructor(
+    @Inject(TOKENS.WalletRepository) private readonly wallets: WalletRepository,
+    @Inject(TOKENS.KeyEncryption) private readonly crypto: KeyEncryptionPort,
+  ) {}
+
+  /**
+   * Decrypts a wallet's private key. Only the wallet owner (or an admin) may
+   * export. Returns the address + raw private key so the user can import it
+   * elsewhere (Metamask, other bots, etc.).
+   */
+  async execute(walletId: string, requesterId: string, isAdmin: boolean) {
+    const wallet = await this.wallets.findById(walletId);
+    if (!wallet) throw new NotFoundError('Wallet');
+    if (!isAdmin && wallet.userId !== requesterId) throw new NotFoundError('Wallet');
+
+    return {
+      id: wallet.id,
+      address: wallet.address,
+      privateKey: this.crypto.decrypt(wallet.encryptedKey),
+    };
   }
 }

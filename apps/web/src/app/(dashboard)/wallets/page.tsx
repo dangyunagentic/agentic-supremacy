@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { KeyRound, Pencil, Plus, RefreshCw, Trash2, Download } from 'lucide-react';
 import type { ChainView, WalletView } from '@mintbot/shared';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/layout/page-header';
@@ -26,6 +26,7 @@ export default function WalletsPage() {
   const [label, setLabel] = useState('');
   const [renameTarget, setRenameTarget] = useState<WalletView | null>(null);
   const [renameLabel, setRenameLabel] = useState('');
+  const [exportData, setExportData] = useState<{ address: string; privateKey: string } | null>(null);
 
   const wallets = useQuery({
     queryKey: ['wallets'],
@@ -72,6 +73,12 @@ export default function WalletsPage() {
       setRenameLabel('');
       void queryClient.invalidateQueries({ queryKey: ['wallets'] });
     },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const exportKey = useMutation({
+    mutationFn: (id: string) => api.get<{ address: string; privateKey: string }>(`/wallets/${id}/key`),
+    onSuccess: (data) => setExportData(data),
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -133,6 +140,15 @@ export default function WalletsPage() {
                   </TD>
                   <TD>
                     <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label="Export private key"
+                        loading={exportKey.isPending && exportKey.variables === wallet.id}
+                        onClick={() => exportKey.mutate(wallet.id)}
+                      >
+                        <Download className="size-3.5" aria-hidden />
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -224,6 +240,53 @@ export default function WalletsPage() {
                 : 'Generate wallet'
               : 'Import wallet'}
           </Button>
+        </div>
+      </Dialog>
+
+      <Dialog open={exportData !== null} onClose={() => setExportData(null)} title="Private key">
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-text-secondary">
+            Keep this key secret. Anyone with it can control this wallet. This key is shown once — store it somewhere safe.
+          </p>
+          <div className="rounded-[8px] border border-border bg-surface px-4 py-3">
+            <p className="label">Address</p>
+            <p className="mono mt-1 break-all text-xs text-text-secondary">{exportData?.address}</p>
+            <p className="label mt-3">Private key</p>
+            <p className="mono mt-1 break-all text-sm text-accent">{exportData?.privateKey}</p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                if (exportData) {
+                  void navigator.clipboard?.writeText(exportData.privateKey);
+                  toast.success('Private key copied to clipboard');
+                }
+              }}
+            >
+              Copy
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (exportData) {
+                  const blob = new Blob([`Address: ${exportData.address}\nPrivate key: ${exportData.privateKey}\n`], {
+                    type: 'text/plain',
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${exportData.address.slice(0, 10)}.txt`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }
+              }}
+            >
+              <Download className="size-4" aria-hidden />
+              Download
+            </Button>
+          </div>
         </div>
       </Dialog>
 

@@ -8,6 +8,7 @@ import { PaginationDto } from '../dto/task.dto';
 import { CreateWalletUseCase, toWalletView } from '../../application/wallets/create-wallet.use-case';
 import {
   DeleteWalletUseCase,
+  ExportWalletKeyUseCase,
   GetWalletBalanceUseCase,
   ListWalletsUseCase,
   RenameWalletUseCase,
@@ -23,6 +24,7 @@ export class WalletsController {
     private readonly remove: DeleteWalletUseCase,
     private readonly balance: GetWalletBalanceUseCase,
     private readonly rename: RenameWalletUseCase,
+    private readonly exportKey: ExportWalletKeyUseCase,
   ) {}
 
   @Get()
@@ -61,5 +63,10 @@ export class WalletsController {
     @Query('chain') chain: string,
   ) {
     return this.balance.execute(id, user.userId, user.role === Role.Admin, chain);
+  }
+
+  @Get(':id/key')
+  exportKeyAction(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.exportKey.execute(id, user.userId, user.role === Role.Admin);
   }
 }
