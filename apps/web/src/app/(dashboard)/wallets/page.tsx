@@ -21,6 +21,7 @@ export default function WalletsPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mode, setMode] = useState<'generate' | 'import'>('generate');
+  const [count, setCount] = useState(1);
   const [privateKey, setPrivateKey] = useState('');
   const [label, setLabel] = useState('');
   const [renameTarget, setRenameTarget] = useState<WalletView | null>(null);
@@ -36,13 +37,18 @@ export default function WalletsPage() {
   });
 
   const createWallet = useMutation({
-    mutationFn: (body: { mode: string; privateKey?: string; label?: string }) =>
-      api.post<WalletView>('/wallets', body),
-    onSuccess: (wallet) => {
-      toast.success(`Wallet ${wallet.address.slice(0, 10)}... added`);
+    mutationFn: (body: { mode: string; count?: number; privateKey?: string; label?: string }) =>
+      api.post<WalletView[]>('/wallets', body),
+    onSuccess: (wallets) => {
+      if (wallets.length === 1) {
+        toast.success(`Wallet ${wallets[0].address.slice(0, 10)}... added`);
+      } else {
+        toast.success(`${wallets.length} wallets added`);
+      }
       setDialogOpen(false);
       setPrivateKey('');
       setLabel('');
+      setCount(1);
       void queryClient.invalidateQueries({ queryKey: ['wallets'] });
     },
     onError: (err: Error) => toast.error(err.message),
@@ -176,6 +182,17 @@ export default function WalletsPage() {
               <option value="import">Import private key</option>
             </Select>
           </Field>
+          {mode === 'generate' && (
+            <Field label="Number of wallets" hint="Generate multiple at once">
+              <Input
+                type="number"
+                min={1}
+                max={200}
+                value={count}
+                onChange={(e) => setCount(Math.max(1, Math.min(200, Number(e.target.value) || 1)))}
+              />
+            </Field>
+          )}
           {mode === 'import' && (
             <Field label="Private key" hint="Encrypted immediately; never stored in plaintext">
               <Input
@@ -191,10 +208,21 @@ export default function WalletsPage() {
             <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="main" />
           </Field>
           <Button
-            onClick={() => createWallet.mutate({ mode, privateKey: privateKey || undefined, label: label || undefined })}
+            onClick={() =>
+              createWallet.mutate({
+                mode,
+                count: mode === 'generate' ? count : undefined,
+                privateKey: privateKey || undefined,
+                label: label || undefined,
+              })
+            }
             loading={createWallet.isPending}
           >
-            {mode === 'generate' ? 'Generate wallet' : 'Import wallet'}
+            {mode === 'generate'
+              ? count > 1
+                ? `Generate ${count} wallets`
+                : 'Generate wallet'
+              : 'Import wallet'}
           </Button>
         </div>
       </Dialog>

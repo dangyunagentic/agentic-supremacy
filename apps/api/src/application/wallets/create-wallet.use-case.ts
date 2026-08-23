@@ -12,6 +12,7 @@ export type CreateWalletMode = 'generate' | 'import';
 export interface CreateWalletInput {
   userId: string;
   mode: CreateWalletMode;
+  count?: number;
   privateKey?: string;
   label?: string;
   chainKey?: string;
@@ -24,7 +25,18 @@ export class CreateWalletUseCase {
     @Inject(TOKENS.KeyEncryption) private readonly crypto: KeyEncryptionPort,
   ) {}
 
-  async execute(input: CreateWalletInput): Promise<WalletEntity> {
+  async execute(input: CreateWalletInput): Promise<WalletEntity[]> {
+    const count = input.mode === 'generate' ? input.count ?? 1 : 1;
+
+    const created: WalletEntity[] = [];
+    for (let i = 0; i < count; i++) {
+      const wallet = await this.createOne(input, i, count);
+      created.push(wallet);
+    }
+    return created;
+  }
+
+  private async createOne(input: CreateWalletInput, index: number, count: number): Promise<WalletEntity> {
     let wallet: ethersWallet | HDNodeWallet;
     if (input.mode === 'import') {
       if (!input.privateKey) throw new ValidationError('Private key is required for import');
@@ -44,11 +56,19 @@ export class CreateWalletUseCase {
 
     const chainId = input.chainKey ? getChainProfile(input.chainKey)?.chainId ?? 1 : 1;
 
+    // Batch generate: label becomes a base + numeric suffix (main, main-2, ...)
+    // unless a label was explicitly provided and this is a single wallet.
+    let label = input.label?.trim() || null;
+    if (input.mode === 'generate' && count > 1) {
+      const base = input.label?.trim() || 'wallet';
+      label = index === 0 ? base : `${base}-${index + 1}`;
+    }
+
     return this.wallets.create({
       userId: input.userId,
       address,
       encryptedKey: this.crypto.encrypt(wallet.privateKey),
-      label: input.label?.trim() || null,
+      label,
       chainId,
     });
   }

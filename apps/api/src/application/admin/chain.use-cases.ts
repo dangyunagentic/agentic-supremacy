@@ -5,7 +5,7 @@ import type {
   AuditLogRepository,
   ChainRepository,
 } from '../../domain/repositories/system.repository';
-import { NotFoundError, ValidationError, ConflictError } from '../common/app-error';
+import { NotFoundError, ValidationError, ConflictError, ForbiddenError } from '../common/app-error';
 import { assertSafePublicUrl } from '../../infrastructure/security/ssrf-guard';
 
 @Injectable()
@@ -74,6 +74,7 @@ export class CreateChainUseCase {
       defaultPrivateRpc,
       seadropAddress: seadrop,
       isActive: true,
+      ownerId: actorId,
     });
     await this.audit.record({
       adminId: actorId,
@@ -166,6 +167,31 @@ export class DeleteChainUseCase {
     await this.audit.record({
       adminId,
       action: 'chain.delete',
+      targetType: 'chain',
+      targetId: chain.key,
+      metadata: {},
+    });
+  }
+}
+
+@Injectable()
+export class DeleteOwnChainUseCase {
+  constructor(
+    @Inject(TOKENS.ChainRepository) private readonly chains: ChainRepository,
+    @Inject(TOKENS.AuditLogRepository) private readonly audit: AuditLogRepository,
+  ) {}
+
+  /** A user may delete a chain they created themselves. */
+  async execute(actorId: string, id: number) {
+    const chain = await this.chains.findById(id);
+    if (!chain) throw new NotFoundError('Chain');
+    if (chain.ownerId !== actorId) {
+      throw new ForbiddenError('You can only delete chains you created');
+    }
+    await this.chains.delete(id);
+    await this.audit.record({
+      adminId: actorId,
+      action: 'chain.delete-own',
       targetType: 'chain',
       targetId: chain.key,
       metadata: {},

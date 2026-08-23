@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Blocks, Plus } from 'lucide-react';
+import { Blocks, Plus, Trash2 } from 'lucide-react';
 import type { ChainView } from '@mintbot/shared';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/lib/auth-store';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,8 +29,10 @@ const emptyForm = {
 
 export default function ChainsPage() {
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [deleteTarget, setDeleteTarget] = useState<ChainView | null>(null);
 
   const chains = useQuery({
     queryKey: ['chains'],
@@ -49,7 +52,20 @@ export default function ChainsPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const deleteChain = useMutation({
+    mutationFn: (id: number) => api.delete(`/chains/${id}`),
+    onSuccess: () => {
+      toast.success('Chain deleted');
+      setDeleteTarget(null);
+      void invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const list = chains.data ?? [];
+
+  const canDelete = (chain: ChainView) =>
+    user?.role === 'admin' || (user?.id != null && chain.ownerId === user.id);
 
   return (
     <>
@@ -91,6 +107,7 @@ export default function ChainsPage() {
                 <TH>SeaDrop</TH>
                 <TH>RPCs</TH>
                 <TH>Status</TH>
+                <TH className="text-right">Actions</TH>
               </TR>
             </THead>
             <TBody>
@@ -110,12 +127,56 @@ export default function ChainsPage() {
                       {chain.isActive ? 'active' : 'disabled'}
                     </Badge>
                   </TD>
+                  <TD className="text-right">
+                    {canDelete(chain) && (
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => setDeleteTarget(chain)}
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                        Delete
+                      </Button>
+                    )}
+                  </TD>
                 </TR>
               ))}
             </TBody>
           </Table>
         </Card>
       )}
+
+      <Dialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete chain"
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-text-secondary">
+            Are you sure you want to delete{' '}
+            <span className="font-medium text-text-primary">{deleteTarget?.name}</span> (
+            {deleteTarget?.key})? This cannot be undone.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setDeleteTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              loading={deleteChain.isPending}
+              onClick={() => deleteTarget && deleteChain.mutate(deleteTarget.id)}
+            >
+              <Trash2 className="size-4" aria-hidden />
+              Delete chain
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} title="Add chain" wide>
         <div className="grid gap-4 md:grid-cols-2">

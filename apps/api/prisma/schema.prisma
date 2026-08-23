@@ -34,6 +34,7 @@ model User {
   rpcEndpoints  RpcEndpoint[]
   transferJobs  TransferJob[]
   refreshTokens RefreshToken[]
+  chains        Chain[]
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -187,6 +188,8 @@ model Chain {
   defaultPrivateRpc String?
   seadropAddress    String   @default("0x00005EA00Ac477B1030CE78506496e8C2dE24bf5")
   isActive          Boolean  @default(true)
+  ownerId           String?
+  owner             User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }

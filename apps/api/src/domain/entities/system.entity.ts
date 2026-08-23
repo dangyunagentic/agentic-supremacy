@@ -9,6 +9,7 @@ export interface ChainEntity {
   defaultPrivateRpc: string | null;
   seadropAddress: string;
   isActive: boolean;
+  ownerId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -9,6 +9,7 @@ import {
   RefreshUseCase,
 } from '../../application/auth/login.use-case';
 import { CreateTelegramPairCodeUseCase } from '../../application/auth/pair-telegram.use-case';
+import { ChangePasswordUseCase } from '../../application/auth/change-password.use-case';
 
 @Module({
   providers: [
@@ -19,6 +20,7 @@ import { CreateTelegramPairCodeUseCase } from '../../application/auth/pair-teleg
     LogoutUseCase,
     MeUseCase,
     CreateTelegramPairCodeUseCase,
+    ChangePasswordUseCase,
   ],
   controllers: [AuthController],
 })

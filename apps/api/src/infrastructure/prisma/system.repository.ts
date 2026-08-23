@@ -27,6 +27,7 @@ export class PrismaChainRepository implements ChainRepository {
     defaultPrivateRpc: string | null;
     seadropAddress: string;
     isActive: boolean;
+    ownerId: string | null;
     createdAt: Date;
     updatedAt: Date;
   }): ChainEntity {

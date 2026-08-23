@@ -5,7 +5,7 @@ import { JwtAuthGuard, Public } from '../shared/jwt.strategy';
 import { CurrentUser } from '../shared/current-user.decorator';
 import { Roles, RolesGuard } from '../shared/roles.guard';
 import type { RequestUser } from '../shared/jwt.strategy';
-import { LoginDto, LogoutDto, RefreshDto, RegisterDto } from '../dto/auth.dto';
+import { LoginDto, LogoutDto, RefreshDto, RegisterDto, ChangePasswordDto } from '../dto/auth.dto';
 import {
   LoginUseCase,
   LogoutUseCase,
@@ -13,6 +13,7 @@ import {
   RefreshUseCase,
 } from '../../application/auth/login.use-case';
 import { RegisterUseCase } from '../../application/auth/register.use-case';
+import { ChangePasswordUseCase } from '../../application/auth/change-password.use-case';
 import { CreateTelegramPairCodeUseCase } from '../../application/auth/pair-telegram.use-case';
 
 @Controller('auth')
@@ -24,6 +25,7 @@ export class AuthController {
     private readonly logout: LogoutUseCase,
     private readonly me: MeUseCase,
     private readonly pairCode: CreateTelegramPairCodeUseCase,
+    private readonly changePassword: ChangePasswordUseCase,
   ) {}
 
   @Post('register')
@@ -58,6 +60,17 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   meAction(@CurrentUser() user: RequestUser) {
     return this.me.execute(user.userId);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  changePasswordAction(@CurrentUser() user: RequestUser, @Body() dto: ChangePasswordDto) {
+    return this.changePassword.execute({
+      userId: user.userId,
+      currentPassword: dto.currentPassword,
+      newPassword: dto.newPassword,
+    });
   }
 
   @Post('telegram/pair-code')

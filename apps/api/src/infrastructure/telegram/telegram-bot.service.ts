@@ -134,7 +134,7 @@ export class TelegramBotService implements OnModuleDestroy {
         const wallet = await this.createWallet.execute(
           arg ? { userId: s.userId, mode: 'import', privateKey: arg } : { userId: s.userId, mode: 'generate' },
         );
-        return ctx.reply(`Wallet added: ${shortAddress(wallet.address)}\nKey is encrypted at rest and never shown again.`);
+        return ctx.reply(`Wallet added: ${shortAddress(wallet[0].address)}\nKey is encrypted at rest and never shown again.`);
       } catch (err) {
         return ctx.reply(`Could not add wallet: ${(err as Error).message}`);
       }

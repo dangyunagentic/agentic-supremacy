@@ -1,8 +1,14 @@
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateWalletDto {
   @IsIn(['generate', 'import'])
   mode!: 'generate' | 'import';
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  count?: number;
 
   @IsOptional()
   @IsString()

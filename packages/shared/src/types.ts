@@ -101,6 +101,7 @@ export interface ChainView {
   defaultPrivateRpc: string | null;
   seadropAddress?: string;
   isActive: boolean;
+  ownerId?: string | null;
 }
 
 export interface SystemConfigView {

@@ -32,7 +32,9 @@ export class WalletsController {
 
   @Post()
   createAction(@CurrentUser() user: RequestUser, @Body() dto: CreateWalletDto) {
-    return this.create.execute({ userId: user.userId, ...dto }).then(toWalletView);
+    return this.create
+      .execute({ userId: user.userId, ...dto })
+      .then((wallets) => wallets.map((w) => toWalletView(w)));
   }
 
   @Patch(':id/label')
