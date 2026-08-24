@@ -27,6 +27,7 @@ export default function WalletsPage() {
   const [renameTarget, setRenameTarget] = useState<WalletView | null>(null);
   const [renameLabel, setRenameLabel] = useState('');
   const [exportData, setExportData] = useState<{ address: string; privateKey: string } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const wallets = useQuery({
     queryKey: ['wallets'],
@@ -64,6 +65,29 @@ export default function WalletsPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const bulkDelete = useMutation({
+    mutationFn: (ids: string[]) => api.post<{ deleted: number }>('/wallets/bulk-delete', { ids }),
+    onSuccess: (data) => {
+      toast.success(`${data.deleted} wallet(s) removed`);
+      setSelected(new Set());
+      void queryClient.invalidateQueries({ queryKey: ['wallets'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const toggleAll = (list: WalletView[], checked: boolean) => {
+    setSelected(checked ? new Set(list.map((w) => w.id)) : new Set());
+  };
+
+  const toggleOne = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const renameWallet = useMutation({
     mutationFn: ({ id, label }: { id: string; label: string }) =>
       api.patch<WalletView>(`/wallets/${id}/label`, { label }),
@@ -97,10 +121,27 @@ export default function WalletsPage() {
         title="Wallets"
         description="Keys are AES-256-GCM encrypted at rest and never leave the server"
         actions={
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
-            <Plus className="size-4" aria-hidden />
-            Add wallet
-          </Button>
+          <>
+            {selected.size > 0 && (
+              <Button
+                size="sm"
+                variant="danger"
+                loading={bulkDelete.isPending}
+                onClick={() => {
+                  if (confirm(`Delete ${selected.size} selected wallet(s)? This cannot be undone.`)) {
+                    bulkDelete.mutate([...selected]);
+                  }
+                }}
+              >
+                <Trash2 className="size-4" aria-hidden />
+                Delete selected ({selected.size})
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setDialogOpen(true)}>
+              <Plus className="size-4" aria-hidden />
+              Add wallet
+            </Button>
+          </>
         }
       />
 
@@ -122,6 +163,15 @@ export default function WalletsPage() {
           <Table>
             <THead>
               <TR>
+                <TH className="w-10">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-accent"
+                    checked={(wallets.data?.length ?? 0) > 0 && selected.size === (wallets.data?.length ?? 0)}
+                    onChange={(e) => wallets.data && toggleAll(wallets.data, e.target.checked)}
+                    aria-label="Select all wallets"
+                  />
+                </TH>
                 <TH>Address</TH>
                 <TH>Label</TH>
                 <TH>Chain</TH>
@@ -132,6 +182,15 @@ export default function WalletsPage() {
             <TBody>
               {wallets.data?.map((wallet) => (
                 <TR key={wallet.id}>
+                  <TD className="w-10">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-accent"
+                      checked={selected.has(wallet.id)}
+                      onChange={() => toggleOne(wallet.id)}
+                      aria-label={`Select ${wallet.label ?? wallet.address}`}
+                    />
+                  </TD>
                   <TD><AddressDisplay address={wallet.address} /></TD>
                   <TD className="text-text-secondary">{wallet.label ?? '-'}</TD>
                   <TD className="mono text-text-secondary">{wallet.chainId}</TD>

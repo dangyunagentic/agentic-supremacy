@@ -30,3 +30,8 @@ export class RenameWalletDto {
   @MaxLength(64)
   label?: string;
 }
+
+export class BulkDeleteWalletsDto {
+  @IsString({ each: true })
+  ids!: string[];
+}

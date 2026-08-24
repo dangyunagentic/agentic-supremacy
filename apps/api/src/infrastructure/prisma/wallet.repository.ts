@@ -72,6 +72,14 @@ export class PrismaWalletRepository implements WalletRepository {
     await this.prisma.wallet.delete({ where: { id } });
   }
 
+  async deleteMany(ids: string[], userId?: string) {
+    const where = userId
+      ? { id: { in: ids }, userId }
+      : { id: { in: ids } };
+    const res = await this.prisma.wallet.deleteMany({ where });
+    return res.count;
+  }
+
   async countAll() {
     return this.prisma.wallet.count();
   }

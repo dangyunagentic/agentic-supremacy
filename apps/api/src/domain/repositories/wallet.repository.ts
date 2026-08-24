@@ -15,6 +15,7 @@ export interface WalletRepository {
   listAll(params: { page: number; limit: number; ownerId?: string }): Promise<Paged<WalletEntity>>;
   updateLabel(id: string, label: string | null): Promise<WalletEntity>;
   delete(id: string): Promise<void>;
+  deleteMany(ids: string[], userId?: string): Promise<number>;
   countAll(): Promise<number>;
   countByUser(userId: string): Promise<number>;
 }

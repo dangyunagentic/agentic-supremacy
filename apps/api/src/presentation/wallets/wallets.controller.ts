@@ -3,10 +3,11 @@ import { JwtAuthGuard } from '../shared/jwt.strategy';
 import { CurrentUser } from '../shared/current-user.decorator';
 import { RolesGuard } from '../shared/roles.guard';
 import type { RequestUser } from '../shared/jwt.strategy';
-import { CreateWalletDto, RenameWalletDto } from '../dto/wallet.dto';
+import { CreateWalletDto, RenameWalletDto, BulkDeleteWalletsDto } from '../dto/wallet.dto';
 import { PaginationDto } from '../dto/task.dto';
 import { CreateWalletUseCase, toWalletView } from '../../application/wallets/create-wallet.use-case';
 import {
+  BulkDeleteWalletsUseCase,
   DeleteWalletUseCase,
   ExportWalletKeyUseCase,
   GetWalletBalanceUseCase,
@@ -25,6 +26,7 @@ export class WalletsController {
     private readonly balance: GetWalletBalanceUseCase,
     private readonly rename: RenameWalletUseCase,
     private readonly exportKey: ExportWalletKeyUseCase,
+    private readonly bulkDelete: BulkDeleteWalletsUseCase,
   ) {}
 
   @Get()
@@ -68,5 +70,10 @@ export class WalletsController {
   @Get(':id/key')
   exportKeyAction(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.exportKey.execute(id, user.userId, user.role === Role.Admin);
+  }
+
+  @Post('bulk-delete')
+  bulkDeleteAction(@CurrentUser() user: RequestUser, @Body() dto: BulkDeleteWalletsDto) {
+    return this.bulkDelete.execute(dto.ids, user.userId, user.role === Role.Admin);
   }
 }

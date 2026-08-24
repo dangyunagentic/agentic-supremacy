@@ -94,3 +94,20 @@ export class ExportWalletKeyUseCase {
     };
   }
 }
+
+@Injectable()
+export class BulkDeleteWalletsUseCase {
+  constructor(@Inject(TOKENS.WalletRepository) private readonly wallets: WalletRepository) {}
+
+  /**
+   * Deletes many wallets at once. A non-admin only deletes wallets they own;
+   * an admin deletes any. Returns how many were actually removed.
+   */
+  async execute(ids: string[], requesterId: string, isAdmin: boolean) {
+    if (!ids || ids.length === 0) throw new ValidationError('At least one wallet id is required');
+    const deleted = isAdmin
+      ? await this.wallets.deleteMany(ids)
+      : await this.wallets.deleteMany(ids, requesterId);
+    return { deleted };
+  }
+}
