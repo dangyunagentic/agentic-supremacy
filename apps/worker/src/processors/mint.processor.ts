@@ -11,8 +11,10 @@ import {
   TaskStatus,
   WalletResultStatus,
   getChainProfile,
+  formatEth,
   isTaskTerminal,
 } from '@mintbot/shared';
+import { parseEther } from 'ethers';
 import { MintEngine } from '../mint-engine';
 import {
   decryptPrivateKey,
@@ -82,8 +84,29 @@ export async function runMint(taskId: string): Promise<void> {
     const { mode } = await engine.resolveMode(task.mintMode, task.collection);
     const plan = await engine.buildPlan(mode, task.collection, task.quantity, wallets);
 
-    // ── Balance validation (upfront reservation rule) ──
+    // ── Free Mint / Price Guard Protection ──
+    // Strictly protects against developer suddenly changing price from Free (0 ETH) to Paid,
+    // or exceeding user's configured price limit.
     const valuePerWallet = plan.kind === 'public' ? plan.shared!.value : plan.perWallet![0]?.value ?? 0n;
+
+    if (task.pricePerNft !== null && task.pricePerNft !== undefined) {
+      const maxPriceWei = parseEther(String(task.pricePerNft));
+      const maxAllowedTotalWei = maxPriceWei * BigInt(task.quantity);
+
+      if (valuePerWallet > maxAllowedTotalWei) {
+        const isFreeMint = maxPriceWei === 0n;
+        const msg = isFreeMint
+          ? `🚨 PRICE GUARD TRIGGERED: Developer changed price from FREE (0 ETH) to ${formatEth(valuePerWallet)} ETH! Minting aborted immediately to protect your wallet funds.`
+          : `🚨 PRICE GUARD TRIGGERED: Actual price is ${formatEth(valuePerWallet)} ETH (exceeds configured max of ${formatEth(maxAllowedTotalWei)} ETH for ${task.quantity} items). Aborting.`;
+
+        await taskLog(taskId, 'error', msg);
+        await setTaskStatus(taskId, TaskStatus.Failed);
+        await notifyTaskUser(taskId, msg);
+        return;
+      }
+    }
+
+    // ── Balance validation (upfront reservation rule) ──
     const balances = await engine.getNativeBalances(wallets.map((w) => w.address));
     const gas = {
       maxFeeGwei: task.maxFeeGwei,

@@ -235,7 +235,7 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
       ],
       timingMode: form.timestamp !== '' ? TimingMode.CustomTime : TimingMode.WaitForStage,
       customFireTime: null,
-      pricePerNft: form.pricePerNft > 0 ? form.pricePerNft : null,
+      pricePerNft: form.pricePerNft != null && !Number.isNaN(form.pricePerNft) ? Number(form.pricePerNft) : null,
       proxyGroup: form.proxyGroup || null,
       fundedOnly: form.fundedOnly,
       flashbots: form.flashbots,
@@ -373,7 +373,10 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
           </Field>
         </div>
         <div className="col-span-6 sm:col-span-4">
-          <Field label="Price per NFT" hint="Optional, informational">
+          <Field
+            label="Price per NFT (ETH)"
+            hint="Set 0 for Free Mint (Auto-aborts if developer changes price to paid)"
+          >
             <Input
               type="number"
               min={0}

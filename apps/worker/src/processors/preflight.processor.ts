@@ -11,9 +11,11 @@ import {
   SEADROP_ADDRESS,
   TaskStatus,
   getChainProfile,
+  formatEth,
   isTaskTerminal,
 } from '@mintbot/shared';
-import { fetchPublicDropStart } from '../mint-engine/seadrop-public';
+import { ethers, parseEther } from 'ethers';
+import { fetchPublicDrop } from '../mint-engine/seadrop-public';
 import { OpenSeaApiClient } from '../mint-engine/opensea-api';
 import { prisma, setTaskStatus, taskLog, decryptPrivateKey } from '../runtime';
 
@@ -55,12 +57,31 @@ export async function runPreflight(taskId: string): Promise<void> {
   // ── Resolve the fire time when waiting for a stage ──
   if (!fireAt) {
     if (isAddress) {
-      const start = await fetchPublicDropStart(rpcUrls[0], seadropAddress, task.collection);
-      if (start === null) {
+      const provider = new ethers.JsonRpcProvider(rpcUrls[0]);
+      const drop = await fetchPublicDrop(provider, seadropAddress, task.collection);
+      if (!drop || drop.startTime === null) {
         throw new Error('No public drop stage found on-chain and no explicit fire time set');
       }
-      fireAt = new Date(start * 1000);
-      await taskLog(taskId, 'info', `Public stage opens at ${fireAt.toISOString()}`);
+
+      // Early price check in preflight
+      if (task.pricePerNft !== null && task.pricePerNft !== undefined) {
+        const maxPriceWei = parseEther(String(task.pricePerNft));
+        const totalNeededWei = drop.mintPrice * BigInt(task.quantity);
+        const maxAllowedTotalWei = maxPriceWei * BigInt(task.quantity);
+
+        if (totalNeededWei > maxAllowedTotalWei) {
+          const isFreeMint = maxPriceWei === 0n;
+          const msg = isFreeMint
+            ? `🚨 PREFLIGHT PRICE GUARD: Contract requires ${formatEth(drop.mintPrice)} ETH per mint (configured for Free Mint). Aborting task.`
+            : `🚨 PREFLIGHT PRICE GUARD: Contract requires ${formatEth(drop.mintPrice)} ETH (exceeds max allowed ${task.pricePerNft} ETH). Aborting task.`;
+          await taskLog(taskId, 'error', msg);
+          await setTaskStatus(taskId, TaskStatus.Failed);
+          return;
+        }
+      }
+
+      fireAt = new Date(drop.startTime * 1000);
+      await taskLog(taskId, 'info', `Public stage opens at ${fireAt.toISOString()} (Price: ${formatEth(drop.mintPrice)} ETH)`);
     } else {
       const openSea = new OpenSeaApiClient(await getOpenSeaKey());
       const stage = await openSea.fetchStage(task.collection, task.chainKey);
