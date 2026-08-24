@@ -48,15 +48,31 @@ async function runFundTransfer(jobId: string): Promise<void> {
 
   try {
     const fromRow = await prisma.wallet.findUniqueOrThrow({ where: { id: job.fromWalletId! } });
-    const toRows = await prisma.wallet.findMany({ where: { id: { in: job.toWalletIds } } });
-    const amount = parseEther(String(job.amountEth));
 
+    // Destination addresses: UUIDs from DB or raw 0x EVM addresses
+    const internalIds = job.toWalletIds.filter((id) => !id.startsWith('0x'));
+    const rawAddresses = job.toWalletIds.filter((id) => id.startsWith('0x'));
+
+    const internalRows = internalIds.length > 0
+      ? await prisma.wallet.findMany({ where: { id: { in: internalIds } } })
+      : [];
+
+    const destinationAddresses = [
+      ...internalRows.map((r) => r.address),
+      ...rawAddresses,
+    ];
+
+    if (destinationAddresses.length === 0) {
+      throw new Error('No destination addresses resolved');
+    }
+
+    const amount = parseEther(String(job.amountEth));
     const signer = new Wallet(decryptPrivateKey(fromRow.encryptedKey), engine.provider);
     const balance = await engine.provider.getBalance(signer.address);
-    const totalRequired = amount * BigInt(toRows.length);
+    const totalRequired = amount * BigInt(destinationAddresses.length);
 
     if (balance < totalRequired) {
-      const errStr = `Insufficient balance: wallet has ${formatEth(balance)} ETH, needs ${formatEth(totalRequired)} ETH for ${toRows.length} transfers`;
+      const errStr = `Insufficient balance: wallet has ${formatEth(balance)} ETH, needs ${formatEth(totalRequired)} ETH for ${destinationAddresses.length} transfers`;
       await prisma.transferJob.update({
         where: { id: jobId },
         data: {
@@ -72,10 +88,10 @@ async function runFundTransfer(jobId: string): Promise<void> {
     const results: ResultRow[] = [];
     let nonce = await engine.provider.getTransactionCount(signer.address, 'pending');
 
-    for (const dest of toRows) {
+    for (const destAddress of destinationAddresses) {
       try {
         const tx = await signer.sendTransaction({
-          to: dest.address,
+          to: destAddress,
           value: amount,
           nonce: nonce++,
           gasLimit: 25_000,
@@ -84,14 +100,14 @@ async function runFundTransfer(jobId: string): Promise<void> {
         });
         const receipt = await tx.wait();
         results.push({
-          address: dest.address,
+          address: destAddress,
           txHash: receipt?.hash ?? tx.hash,
           status: receipt?.status === 1 ? 'success' : 'failed',
           detail: receipt?.status === 1 ? undefined : 'reverted',
         });
       } catch (err) {
         results.push({
-          address: dest.address,
+          address: destAddress,
           txHash: null,
           status: 'failed',
           detail: sanitizeError(err),

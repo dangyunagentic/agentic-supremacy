@@ -16,8 +16,8 @@ import { NotFoundError, ValidationError } from '../common/app-error';
 export interface CreateFundTransferInput {
   chainKey: string;
   fromWalletId: string;
-  toWalletIds: string[];
-  amountEth: string; // decimal ETH, same amount to every destination
+  toWalletIds: string[]; // can contain wallet UUIDs and/or raw 0x EVM addresses
+  amountEth: string; // decimal ETH per destination wallet
 }
 
 export interface CreateTransferNftInput {
@@ -53,14 +53,37 @@ export class CreateTransferUseCase {
     return owned;
   }
 
-  /** Fund: send `amountEth` from the main wallet to every destination wallet. */
+  /** Fund: send `amountEth` from the main wallet to every destination wallet (internal or raw 0x addresses). */
   async executeFund(userId: string, input: CreateFundTransferInput): Promise<TransferJobView> {
     await this.assertChain(input.chainKey);
-    if (input.fromWalletId && input.toWalletIds.includes(input.fromWalletId)) {
+    const source = await this.assertOwnWallets(userId, [input.fromWalletId]);
+
+    const uniqueTo = [...new Set(input.toWalletIds.map((s) => s.trim()).filter(Boolean))];
+    if (uniqueTo.length === 0) {
+      throw new ValidationError('Provide at least one destination wallet');
+    }
+
+    const internalIds: string[] = [];
+    const externalAddresses: string[] = [];
+
+    for (const item of uniqueTo) {
+      if (isAddressShared(item)) {
+        externalAddresses.push(item.toLowerCase());
+      } else {
+        internalIds.push(item);
+      }
+    }
+
+    let resolvedInternalAddresses: string[] = [];
+    if (internalIds.length > 0) {
+      const owned = await this.assertOwnWallets(userId, internalIds);
+      resolvedInternalAddresses = owned.map((w) => w.address.toLowerCase());
+    }
+
+    const allDestAddresses = [...new Set([...resolvedInternalAddresses, ...externalAddresses])];
+    if (allDestAddresses.includes(source[0].address.toLowerCase())) {
       throw new ValidationError('Source wallet cannot also be a destination');
     }
-    const source = await this.assertOwnWallets(userId, [input.fromWalletId]);
-    const destinations = await this.assertOwnWallets(userId, input.toWalletIds);
 
     let amountWei: bigint;
     try {
@@ -70,12 +93,13 @@ export class CreateTransferUseCase {
     }
     if (amountWei <= 0n) throw new ValidationError('Amount must be positive');
 
+    // Store destination identifiers (UUIDs and raw addresses)
     const job = await this.transfers.create({
       userId,
       kind: TransferKind.Fund,
       chainKey: input.chainKey,
       fromWalletId: source[0].id,
-      toWalletIds: destinations.map((w) => w.id),
+      toWalletIds: uniqueTo,
       amountEth: input.amountEth.trim(),
     });
     await this.scheduler.scheduleTransfer(job.id);
