@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, UseGuards } f
 import { JwtAuthGuard } from '../shared/jwt.strategy';
 import { CurrentUser } from '../shared/current-user.decorator';
 import type { RequestUser } from '../shared/jwt.strategy';
+import { Role } from '@mintbot/shared';
 import {
   ListChainsUseCase,
   CreateChainUseCase,
@@ -37,6 +38,6 @@ export class ChainsController {
 
   @Delete(':id')
   deleteAction(@CurrentUser() user: RequestUser, @Param('id', ParseIntPipe) id: number) {
-    return this.deleteOwnChain.execute(user.userId, id);
+    return this.deleteOwnChain.execute(user.userId, user.role === Role.Admin, id);
   }
 }

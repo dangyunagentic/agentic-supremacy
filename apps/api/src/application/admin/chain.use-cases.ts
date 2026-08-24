@@ -181,17 +181,17 @@ export class DeleteOwnChainUseCase {
     @Inject(TOKENS.AuditLogRepository) private readonly audit: AuditLogRepository,
   ) {}
 
-  /** A user may delete a chain they created themselves. */
-  async execute(actorId: string, id: number) {
+  /** Admin may delete any chain; regular users may only delete chains they created. */
+  async execute(actorId: string, isAdmin: boolean, id: number) {
     const chain = await this.chains.findById(id);
     if (!chain) throw new NotFoundError('Chain');
-    if (chain.ownerId !== actorId) {
+    if (!isAdmin && chain.ownerId !== actorId) {
       throw new ForbiddenError('You can only delete chains you created');
     }
     await this.chains.delete(id);
     await this.audit.record({
       adminId: actorId,
-      action: 'chain.delete-own',
+      action: isAdmin ? 'chain.delete' : 'chain.delete-own',
       targetType: 'chain',
       targetId: chain.key,
       metadata: {},
