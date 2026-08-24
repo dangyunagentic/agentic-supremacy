@@ -7,9 +7,17 @@ import {
   ListTasksUseCase,
   StopTaskUseCase,
 } from '../../application/tasks/task.use-cases';
+import { ResolveCollectionUseCase } from '../../application/eligibility/resolve-collection.use-case';
 
 @Module({
-  providers: [CreateTaskUseCase, ListTasksUseCase, GetTaskUseCase, StopTaskUseCase, ListTaskLogsUseCase],
+  providers: [
+    CreateTaskUseCase,
+    ListTasksUseCase,
+    GetTaskUseCase,
+    StopTaskUseCase,
+    ListTaskLogsUseCase,
+    ResolveCollectionUseCase,
+  ],
   controllers: [TasksController],
 })
 export class TasksModule {}

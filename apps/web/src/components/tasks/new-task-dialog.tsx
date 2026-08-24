@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronDown, Check, Rocket, Search } from 'lucide-react';
+import { ChevronDown, Check, Rocket, Search, Loader2, Sparkles } from 'lucide-react';
 import {
   MintMode,
   TimingMode,
@@ -20,7 +20,21 @@ import { api } from '@/lib/api';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+
+interface ResolvedCollectionMeta {
+  name: string | null;
+  slug: string | null;
+  contractAddress: string | null;
+  chainKey: string | null;
+  symbol: string | null;
+  imageUrl: string | null;
+  bannerUrl: string | null;
+  description: string | null;
+  totalSupply: number | null;
+  source: 'opensea' | 'onchain' | 'unknown';
+}
 
 interface NewTaskForm {
   collection: string;
@@ -136,6 +150,26 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
       api.get<RpcEndpointView[]>(`/rpc-endpoints${form.chainKey ? `?chain=${form.chainKey}` : ''}`),
   });
 
+  const resolvedMeta = useQuery({
+    queryKey: ['resolve-collection-task', form.collection, form.chainKey],
+    queryFn: () =>
+      api.get<ResolvedCollectionMeta>(
+        `/eligibility/resolve?input=${encodeURIComponent(form.collection.trim())}&chainKey=${form.chainKey || ''}`,
+      ),
+    enabled: form.collection.trim().length >= 3,
+    staleTime: 60_000,
+  });
+
+  // Auto-set chain if detected from link
+  useEffect(() => {
+    if (resolvedMeta.data?.chainKey && !form.chainKey) {
+      const match = chains.data?.find(
+        (c) => c.key.toLowerCase() === resolvedMeta.data?.chainKey?.toLowerCase(),
+      );
+      if (match) setForm((f) => ({ ...f, chainKey: match.key }));
+    }
+  }, [resolvedMeta.data?.chainKey, chains.data, form.chainKey]);
+
   const create = useMutation({
     mutationFn: (input: CreateTaskInput) => api.post<TaskView>('/tasks', input),
     onSuccess: (task) => {
@@ -232,15 +266,64 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
         <div className="col-span-12">
           <Field
             label="Contract Address / Launchpad Link"
-            hint="Contract address (public mints) or OpenSea slug / URL (allowlist & FCFS)"
+            hint="Contract address (0x...), OpenSea URL, or collection slug (Auto-detected)"
           >
-            <Input
-              value={form.collection}
-              onChange={(e) => set('collection', e.target.value)}
-              placeholder="0x... or https://opensea.io/collection/the-plimpo/"
-              className="mono"
-            />
+            <div className="relative">
+              <Input
+                value={form.collection}
+                onChange={(e) => set('collection', e.target.value)}
+                placeholder="0x... or https://opensea.io/collection/the-plimpo/ or slug"
+                className="mono pr-8"
+              />
+              {resolvedMeta.isFetching && (
+                <div className="absolute right-2.5 top-2.5">
+                  <Loader2 className="size-4 animate-spin text-accent" />
+                </div>
+              )}
+            </div>
           </Field>
+
+          {/* NFT / Collection Preview Card */}
+          {resolvedMeta.data && (resolvedMeta.data.name || resolvedMeta.data.imageUrl || resolvedMeta.data.symbol) && (
+            <div className="mt-3 flex items-center gap-3 rounded-[8px] border border-accent/30 bg-accent-subtle/50 p-3">
+              {resolvedMeta.data.imageUrl ? (
+                <img
+                  src={resolvedMeta.data.imageUrl}
+                  alt={resolvedMeta.data.name || 'NFT'}
+                  className="size-12 rounded-[6px] object-cover border border-border"
+                />
+              ) : (
+                <div className="flex size-12 items-center justify-center rounded-[6px] bg-surface-2 border border-border">
+                  <Sparkles className="size-5 text-accent" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-text-primary truncate text-sm">
+                    {resolvedMeta.data.name || resolvedMeta.data.slug}
+                  </p>
+                  {resolvedMeta.data.symbol && (
+                    <Badge tone="neutral" className="text-[10px] uppercase">
+                      {resolvedMeta.data.symbol}
+                    </Badge>
+                  )}
+                  <Badge tone={resolvedMeta.data.source === 'opensea' ? 'accent' : 'success'} className="text-[10px]">
+                    {resolvedMeta.data.source}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-3 mt-1 text-xs text-text-secondary">
+                  {resolvedMeta.data.contractAddress && (
+                    <span className="mono truncate max-w-[200px]">
+                      {resolvedMeta.data.contractAddress}
+                    </span>
+                  )}
+                  {resolvedMeta.data.totalSupply && (
+                    <span>Supply: {resolvedMeta.data.totalSupply.toLocaleString()}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Chain + Mint Phase */}

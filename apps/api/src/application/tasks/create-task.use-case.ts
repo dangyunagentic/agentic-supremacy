@@ -18,6 +18,7 @@ import type { WalletRepository } from '../../domain/repositories/wallet.reposito
 import type { ChainRepository } from '../../domain/repositories/system.repository';
 import type { MintSchedulerPort, NotifierPort } from '../../domain/ports/ports';
 import type { TaskEntity } from '../../domain/entities/task.entity';
+import { ResolveCollectionUseCase } from '../eligibility/resolve-collection.use-case';
 import { ValidationError, NotFoundError } from '../common/app-error';
 
 const MIN_GAS_LIMIT = 21_000;
@@ -31,12 +32,29 @@ export class CreateTaskUseCase {
     @Inject(TOKENS.ChainRepository) private readonly chains: ChainRepository,
     @Inject(TOKENS.MintScheduler) private readonly scheduler: MintSchedulerPort,
     @Inject(TOKENS.Notifier) private readonly notifier: NotifierPort,
+    private readonly resolveCollection: ResolveCollectionUseCase,
   ) {}
 
   async execute(userId: string, input: CreateTaskInput): Promise<TaskView> {
-    // ── Collection ──
+    // ── Collection Auto-resolution ──
     const parsed = parseCollectionInput(input.collection);
-    if (!parsed.address && !parsed.slug) throw new ValidationError('Invalid collection');
+    const targetChain = parsed.chainKey || input.chainKey;
+    let resolvedSlug = parsed.slug;
+    let resolvedAddress = parsed.address;
+
+    if (!resolvedSlug && resolvedAddress) {
+      try {
+        const resolved = await this.resolveCollection.execute(resolvedAddress, targetChain);
+        if (resolved.slug) resolvedSlug = resolved.slug;
+      } catch {}
+    } else if (!resolvedAddress && resolvedSlug) {
+      try {
+        const resolved = await this.resolveCollection.execute(resolvedSlug, targetChain);
+        if (resolved.contractAddress) resolvedAddress = resolved.contractAddress;
+      } catch {}
+    }
+
+    if (!resolvedAddress && !resolvedSlug) throw new ValidationError('Invalid collection address or URL');
 
     // ── Chain ──
     const chain = await this.chains.findByKey(input.chainKey);
@@ -95,9 +113,9 @@ export class CreateTaskUseCase {
       throw new ValidationError('Invalid recipient address');
     }
     if (input.mintMode === MintMode.Allowlist || input.mintMode === MintMode.Fcfs) {
-      if (!parsed.slug) {
+      if (!resolvedSlug && !resolvedAddress) {
         throw new ValidationError(
-          'Allowlist/FCFS modes need an OpenSea collection slug or URL (the OpenSea API is slug-based)',
+          'Allowlist/FCFS modes need a valid OpenSea collection slug or contract address',
         );
       }
     }
@@ -128,13 +146,16 @@ export class CreateTaskUseCase {
     }
 
     const delayMs = input.delayMs ?? 1000;
-    const name = input.name.trim() || parsed.slug || parsed.address!;
+    const finalCollection = (input.mintMode === MintMode.Allowlist || input.mintMode === MintMode.Fcfs)
+      ? (resolvedSlug || resolvedAddress!)
+      : (resolvedAddress || resolvedSlug!);
+    const name = input.name.trim() || resolvedSlug || resolvedAddress || 'Mint Task';
 
     const task = await this.tasks.create({
       userId,
       name,
-      collection: parsed.address ?? parsed.slug!,
-      chainKey: input.chainKey,
+      collection: finalCollection,
+      chainKey: targetChain,
       walletIds,
       quantity: input.quantity,
       mintMode: input.mintMode,
