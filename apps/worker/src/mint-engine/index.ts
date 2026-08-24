@@ -5,6 +5,7 @@ import { JsonRpcProvider, Wallet, keccak256, getBytes, toUtf8Bytes, type Provide
 import { gweiToWei, PRE_SIGN_LEAD_MS } from '@mintbot/shared';
 import { buildLocalMintPlan, fetchPublicDrop, type LocalMintPlan } from './seadrop-public';
 import { buildSignedPlans, type SignedMintPlan } from './seadrop-signed';
+import { UniversalLaunchpadEngine, type UniversalMintPlan } from './universal-launchpad';
 import { blastToAll, waitForReceipt, type BlastResult } from './rpc-blast';
 import { warmConnections } from './connection-warmer';
 import { waitForMintTime } from './timer';
@@ -68,6 +69,7 @@ export interface ReceiptOutcome {
 export class MintEngine {
   readonly provider: JsonRpcProvider;
   private readonly openSea: OpenSeaApiClient;
+  private readonly universal = new UniversalLaunchpadEngine();
 
   constructor(
     readonly chain: EngineChain,
@@ -136,19 +138,52 @@ export class MintEngine {
     wallets: EngineWallet[],
   ): Promise<BuiltPlan> {
     if (mode === 'public') {
-      const plan = await buildLocalMintPlan(
+      try {
+        const plan = await buildLocalMintPlan(
+          this.provider,
+          this.chain.seadropAddress,
+          collection,
+          quantity,
+        );
+        if (plan) {
+          if (plan.drop.maxTotalMintableByWallet > 0 && quantity > plan.drop.maxTotalMintableByWallet) {
+            throw new Error(
+              `Quantity ${quantity} exceeds the per-wallet limit ${plan.drop.maxTotalMintableByWallet}`,
+            );
+          }
+          return { kind: 'public', shared: plan };
+        }
+      } catch (err) {
+        // Fallback to Universal Launchpad Engine (Scatter.art, Zora, Direct Contract)
+      }
+
+      // Universal Launchpad fallback (Scatter.art / Zora / Generic ERC-721)
+      const uPlan = await this.universal.buildUniversalPlan(
         this.provider,
         this.chain.seadropAddress,
         collection,
         quantity,
+        wallets[0]?.address ?? '',
+        this.chain.key,
       );
-      if (!plan) throw new Error('No public drop configured on this contract');
-      if (plan.drop.maxTotalMintableByWallet > 0 && quantity > plan.drop.maxTotalMintableByWallet) {
-        throw new Error(
-          `Quantity ${quantity} exceeds the per-wallet limit ${plan.drop.maxTotalMintableByWallet}`,
-        );
-      }
-      return { kind: 'public', shared: plan };
+
+      return {
+        kind: 'public',
+        shared: {
+          to: uPlan.to,
+          data: uPlan.data,
+          value: uPlan.value,
+          feeRecipient: '',
+          drop: {
+            mintPrice: uPlan.mintPrice,
+            startTime: uPlan.startTime ?? 0,
+            endTime: 0,
+            maxTotalMintableByWallet: 0,
+            feeBps: 0,
+            restrictFeeRecipients: false,
+          },
+        },
+      };
     }
     const plans = await buildSignedPlans(
       this.openSea,

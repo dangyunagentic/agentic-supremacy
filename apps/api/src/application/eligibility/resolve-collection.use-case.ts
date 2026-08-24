@@ -66,6 +66,35 @@ export class ResolveCollectionUseCase {
   }
 
   async execute(input: string, fallbackChainKey?: string): Promise<ResolvedCollectionInfo> {
+    // 0. If it's a Scatter.art URL or slug
+    if (input.includes('scatter.art')) {
+      const slug = input.replace(/https?:\/\/(www\.)?scatter\.art\/(collection\/)?/i, '').replace(/\/.*$/, '').trim();
+      try {
+        const scatterRes = await fetch(`https://api.scatter.art/v1/collection/${slug}`, {
+          headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (scatterRes.ok) {
+          const data = (await scatterRes.json()) as any;
+          const col = data.collection || data;
+          return {
+            name: col.name || slug,
+            slug: col.slug || slug,
+            contractAddress: col.address || null,
+            chainKey: col.chain || fallbackChainKey || 'base',
+            symbol: col.symbol || null,
+            imageUrl: col.image || col.avatar || null,
+            bannerUrl: col.banner || null,
+            description: col.description || null,
+            totalSupply: col.totalSupply || null,
+            source: 'scatter' as any,
+          };
+        }
+      } catch {
+        // continue
+      }
+    }
+
     const parsed = parseCollectionInput(input);
     const targetChain = parsed.chainKey || fallbackChainKey || 'ethereum';
 
