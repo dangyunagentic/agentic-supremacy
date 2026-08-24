@@ -4,7 +4,16 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronDown, Check, Rocket, Search, Loader2, Sparkles } from 'lucide-react';
+import {
+  ChevronDown,
+  Check,
+  Rocket,
+  Search,
+  Loader2,
+  Sparkles,
+  ShieldCheck,
+  Filter,
+} from 'lucide-react';
 import {
   MintMode,
   TimingMode,
@@ -15,11 +24,12 @@ import {
   type RpcEndpointView,
   type TaskView,
   type WalletView,
+  type EligibilityReport,
 } from '@mintbot/shared';
 import { api } from '@/lib/api';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Field, Input, Select } from '@/components/ui/input';
+import { Field, Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
@@ -57,7 +67,6 @@ interface NewTaskForm {
   action: boolean;
 }
 
-/** Input with a right-aligned unit suffix (gwei, units, ms, etc.). */
 function UnitInput({
   unit,
   className,
@@ -170,6 +179,67 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
     }
   }, [resolvedMeta.data?.chainKey, chains.data, form.chainKey]);
 
+  // ── Live Eligibility Check ──
+  const eligibilityMutation = useMutation({
+    mutationFn: () => {
+      const allWalletIds = (wallets.data ?? []).map((w) => w.id);
+      return api.post<EligibilityReport>('/eligibility/check', {
+        collection: form.collection.trim(),
+        chainKey: form.chainKey || 'base',
+        walletIds: allWalletIds,
+        quantity: form.quantity || 1,
+      });
+    },
+    onSuccess: (data) => {
+      const eligibleAddrs = new Set(
+        (data.wallets ?? []).filter((w) => w.eligible).map((w) => w.address.toLowerCase()),
+      );
+      const eligibleWalletIds = (wallets.data ?? [])
+        .filter((w) => eligibleAddrs.has(w.address.toLowerCase()))
+        .map((w) => w.id);
+
+      if (eligibleWalletIds.length > 0) {
+        toast.success(`Found ${eligibleWalletIds.length} eligible / whitelisted wallet(s)!`);
+      } else {
+        toast.info('No wallets are whitelisted for this drop stage');
+      }
+    },
+    onError: (err: Error) => toast.error(`Eligibility check failed: ${err.message}`),
+  });
+
+  const eligReport = eligibilityMutation.data;
+  const eligibleAddressMap = new Map<string, { eligible: boolean; reason: string }>();
+  if (eligReport?.wallets) {
+    for (const w of eligReport.wallets) {
+      eligibleAddressMap.set(w.address.toLowerCase(), {
+        eligible: w.eligible,
+        reason: w.reason,
+      });
+    }
+  }
+
+  const eligibleCount =
+    (wallets.data ?? []).filter((w) => eligibleAddressMap.get(w.address.toLowerCase())?.eligible)
+      .length;
+
+  // Auto select eligible only
+  const handleSelectEligibleOnly = () => {
+    if (!eligReport?.wallets) return;
+    const eligibleAddrs = new Set(
+      eligReport.wallets.filter((w) => w.eligible).map((w) => w.address.toLowerCase()),
+    );
+    const eligibleIds = (wallets.data ?? [])
+      .filter((w) => eligibleAddrs.has(w.address.toLowerCase()))
+      .map((w) => w.id);
+
+    if (eligibleIds.length > 0) {
+      setForm((f) => ({ ...f, walletIds: eligibleIds }));
+      toast.success(`Selected ${eligibleIds.length} whitelisted wallet(s)`);
+    } else {
+      toast.error('No eligible wallets found to select');
+    }
+  };
+
   const create = useMutation({
     mutationFn: (input: CreateTaskInput) => api.post<TaskView>('/tasks', input),
     onSuccess: (task) => {
@@ -180,53 +250,67 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const walletCap = MAX_WALLETS_PER_TASK[WalletMode.SelfFunded] ?? 1;
-
   const set = <K extends keyof NewTaskForm>(key: K, value: NewTaskForm[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
   const toggleWallet = (id: string) => {
     setForm((f) => {
-      const selected = f.walletIds.includes(id);
-      if (selected) return { ...f, walletIds: f.walletIds.filter((w) => w !== id) };
-      if (f.walletIds.length >= walletCap) return f;
-      return { ...f, walletIds: [...f.walletIds, id] };
+      const exists = f.walletIds.includes(id);
+      return {
+        ...f,
+        walletIds: exists ? f.walletIds.filter((w) => w !== id) : [...f.walletIds, id],
+      };
     });
   };
 
   const visibleWallets = (wallets.data ?? []).filter((w) => {
-    const q = walletSearch.trim().toLowerCase();
-    if (!q) return true;
-    return (w.label ?? '').toLowerCase().includes(q) || w.address.toLowerCase().includes(q);
+    if (!walletSearch) return true;
+    const s = walletSearch.toLowerCase();
+    return w.address.toLowerCase().includes(s) || (w.label && w.label.toLowerCase().includes(s));
   });
+
   const allVisibleSelected =
     visibleWallets.length > 0 && visibleWallets.every((w) => form.walletIds.includes(w.id));
 
   const toggleAllWallets = () => {
-    setForm((f) => {
-      const visibleIds = visibleWallets.map((w) => w.id);
-      if (allVisibleSelected) {
-        const visibleSet = new Set(visibleIds);
-        return { ...f, walletIds: f.walletIds.filter((id) => !visibleSet.has(id)) };
-      }
-      const merged = new Set([...f.walletIds, ...visibleIds]);
-      const capped = [...merged].slice(0, Number.isFinite(walletCap) ? walletCap : merged.size);
-      return { ...f, walletIds: capped };
-    });
+    if (allVisibleSelected) {
+      const visibleIds = new Set(visibleWallets.map((w) => w.id));
+      setForm((f) => ({ ...f, walletIds: f.walletIds.filter((id) => !visibleIds.has(id)) }));
+    } else {
+      const combined = Array.from(
+        new Set([...form.walletIds, ...visibleWallets.map((w) => w.id)]),
+      );
+      setForm((f) => ({ ...f, walletIds: combined }));
+    }
   };
 
-  // RPC selection: "All endpoints" means selectedRpcIds empty → fall back to chain defaults.
-  const allRpcSelected = selectedRpcIds.length === 0;
+  const toggleRpc = (id: string) => {
+    setSelectedRpcIds((prev) =>
+      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id],
+    );
+  };
 
-  const submit = () => {
+  const toggleAllRpcs = () => {
+    const allIds = (rpcEndpoints.data ?? []).map((r) => r.id);
+    setSelectedRpcIds((prev) => (prev.length === allIds.length ? [] : allIds));
+  };
+
+  const walletCap = MAX_WALLETS_PER_TASK[WalletMode.SelfFunded];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
     const payload: CreateTaskInput = {
-      name: form.collection.trim(),
+      name:
+        resolvedMeta.data?.name ||
+        (form.collection.startsWith('0x')
+          ? `${form.collection.slice(0, 6)}...${form.collection.slice(-4)}`
+          : form.collection.trim()),
       collection: form.collection.trim(),
       chainKey: form.chainKey,
-      walletIds: form.walletIds,
-      quantity: form.quantity,
       mintMode: form.mintMode,
       walletMode: WalletMode.SelfFunded,
+      walletIds: form.walletIds,
+      quantity: Number(form.quantity),
       rpcUrls: [
         ...(rpcEndpoints.data ?? [])
           .filter((ep) => selectedRpcIds.includes(ep.id))
@@ -283,92 +367,134 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
             </div>
           </Field>
 
-          {/* NFT / Collection Preview Card */}
+          {/* NFT / Collection Preview Card with Live Check Button */}
           {resolvedMeta.data && (resolvedMeta.data.name || resolvedMeta.data.imageUrl || resolvedMeta.data.symbol) && (
-            <div className="mt-3 flex items-center gap-3 rounded-[8px] border border-accent/30 bg-accent-subtle/50 p-3">
-              {resolvedMeta.data.imageUrl ? (
-                <img
-                  src={resolvedMeta.data.imageUrl}
-                  alt={resolvedMeta.data.name || 'NFT'}
-                  className="size-12 rounded-[6px] object-cover border border-border"
-                />
-              ) : (
-                <div className="flex size-12 items-center justify-center rounded-[6px] bg-surface-2 border border-border">
-                  <Sparkles className="size-5 text-accent" />
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium text-text-primary truncate text-sm">
-                    {resolvedMeta.data.name || resolvedMeta.data.slug}
-                  </p>
-                  {resolvedMeta.data.symbol && (
-                    <Badge tone="neutral" className="text-[10px] uppercase">
-                      {resolvedMeta.data.symbol}
-                    </Badge>
-                  )}
-                  <Badge tone={resolvedMeta.data.source === 'opensea' ? 'accent' : 'success'} className="text-[10px]">
-                    {resolvedMeta.data.source}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-3 mt-1 text-xs text-text-secondary">
-                  {resolvedMeta.data.contractAddress && (
-                    <span className="mono truncate max-w-[200px]">
-                      {resolvedMeta.data.contractAddress}
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-[8px] border border-accent/30 bg-accent-subtle/50 p-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {resolvedMeta.data.imageUrl ? (
+                  <img
+                    src={resolvedMeta.data.imageUrl}
+                    alt={resolvedMeta.data.name || 'NFT'}
+                    className="size-12 rounded-[6px] object-cover border border-border"
+                  />
+                ) : (
+                  <div className="flex size-12 items-center justify-center rounded-[6px] bg-surface-2 border border-border">
+                    <Sparkles className="size-5 text-accent" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm text-text-primary truncate">
+                      {resolvedMeta.data.name || 'NFT Collection'}
                     </span>
-                  )}
-                  {resolvedMeta.data.totalSupply && (
-                    <span>Supply: {resolvedMeta.data.totalSupply.toLocaleString()}</span>
-                  )}
+                    {resolvedMeta.data.symbol && (
+                      <Badge tone="neutral" className="text-[10px] uppercase">
+                        {resolvedMeta.data.symbol}
+                      </Badge>
+                    )}
+                    <Badge tone="accent" className="text-[10px] uppercase">
+                      {resolvedMeta.data.source}
+                    </Badge>
+                  </div>
+                  <p className="mono text-xs text-text-muted truncate">
+                    {resolvedMeta.data.contractAddress || form.collection}
+                  </p>
                 </div>
+              </div>
+
+              {/* Check Eligibility Button inside Card */}
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => eligibilityMutation.mutate()}
+                loading={eligibilityMutation.isPending}
+                disabled={!form.collection.trim()}
+                className="shrink-0 gap-1.5 text-xs font-semibold"
+              >
+                <ShieldCheck className="size-3.5 text-accent" />
+                Check WL Eligibility
+              </Button>
+            </div>
+          )}
+
+          {/* Eligibility Results Alert Banner */}
+          {eligReport && (
+            <div className="mt-3 rounded-[8px] border border-border bg-surface-2 p-3 text-xs space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-text-primary">Whitelist Scan:</span>
+                  <Badge tone={eligibleCount > 0 ? 'success' : 'danger'}>
+                    {eligibleCount} / {(wallets.data ?? []).length} Wallets Whitelisted
+                  </Badge>
+                  <span className="text-text-muted uppercase">
+                    (Mode: {eligReport.mode} {eligReport.mintPrice ? `· ${eligReport.mintPrice} ETH` : ''})
+                  </span>
+                </div>
+                {eligibleCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="h-7 text-xs gap-1"
+                    onClick={handleSelectEligibleOnly}
+                  >
+                    <Filter className="size-3" />
+                    Select {eligibleCount} Eligible Wallet(s)
+                  </Button>
+                )}
               </div>
             </div>
           )}
         </div>
 
-        {/* Chain + Mint Phase */}
+        {/* Chain & Mint Phase */}
         <div className="col-span-12 sm:col-span-6">
           <Field label="Chain">
-            <Select value={form.chainKey} onChange={(e) => set('chainKey', e.target.value)}>
-              <option value="">Select chain</option>
-              {chains.data?.map((c) => (
+            <select
+              value={form.chainKey}
+              onChange={(e) => set('chainKey', e.target.value)}
+              className="input-base w-full"
+            >
+              <option value="">Select chain...</option>
+              {(chains.data ?? []).map((c) => (
                 <option key={c.key} value={c.key}>
-                  {c.name} ({c.nativeSymbol})
+                  {c.name} ({c.key})
                 </option>
               ))}
-            </Select>
+            </select>
           </Field>
         </div>
         <div className="col-span-12 sm:col-span-6">
           <Field label="Mint Phase">
-            <Select
+            <select
               value={form.mintMode}
               onChange={(e) => set('mintMode', e.target.value as MintMode)}
+              className="input-base w-full"
             >
-              <option value={MintMode.Public}>Public</option>
-              <option value={MintMode.Allowlist}>Allowlist</option>
-              <option value={MintMode.Fcfs}>FCFS</option>
               <option value={MintMode.Auto}>Auto detect</option>
-            </Select>
+              <option value={MintMode.Public}>Public</option>
+              <option value={MintMode.Allowlist}>Allowlist (GTD)</option>
+              <option value={MintMode.Fcfs}>FCFS</option>
+            </select>
           </Field>
         </div>
 
-        {/* Proxy Group + NFT Amount + Price per NFT */}
+        {/* Proxy Group & Quantity */}
         <div className="col-span-12 sm:col-span-4">
-          <Field label="Proxy Group">
-            <Select value={form.proxyGroup} onChange={(e) => set('proxyGroup', e.target.value)}>
-              <option value="">(no proxy)</option>
-            </Select>
+          <Field label="Proxy Group" hint="Optional">
+            <Input
+              value={form.proxyGroup}
+              onChange={(e) => set('proxyGroup', e.target.value)}
+              placeholder="e.g. residential-1"
+            />
           </Field>
         </div>
         <div className="col-span-6 sm:col-span-4">
-          <Field label="NFT Amount" hint="Per wallet (max 50)">
+          <Field label="NFT Quantity per Wallet">
             <Input
               type="number"
               min={1}
-              max={50}
               value={form.quantity}
-              onChange={(e) => set('quantity', Number(e.target.value))}
+              onChange={(e) => set('quantity', Math.max(1, Number(e.target.value)))}
             />
           </Field>
         </div>
@@ -388,7 +514,7 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
           </Field>
         </div>
 
-        {/* Funded Only + Wallets */}
+        {/* Funded Only + Wallets Selection */}
         <div className="col-span-12 sm:col-span-4">
           <div className="mb-2 flex h-9 items-center">
             <Toggle
@@ -401,10 +527,21 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
         <div className="col-span-12 sm:col-span-8">
           <div className="mb-2 flex items-center justify-between">
             <span className="label">Wallets</span>
-            <span className="text-xs text-text-muted">
-              {form.walletIds.length}
-              {Number.isFinite(walletCap) ? `/${walletCap}` : ''} selected
-            </span>
+            <div className="flex items-center gap-2">
+              {eligibleCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSelectEligibleOnly}
+                  className="text-xs text-success font-semibold hover:underline"
+                >
+                  Select WL only ({eligibleCount})
+                </button>
+              )}
+              <span className="text-xs text-text-muted">
+                {form.walletIds.length}
+                {Number.isFinite(walletCap) ? `/${walletCap}` : ''} selected
+              </span>
+            </div>
           </div>
           <div className="relative">
             <button
@@ -434,17 +571,29 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
                     className="w-full bg-transparent text-sm text-text-primary outline-none placeholder:text-text-muted"
                   />
                 </div>
-                <button
-                  type="button"
-                  onClick={toggleAllWallets}
-                  className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-sm text-accent transition-colors hover:bg-surface-2"
-                >
-                  <Check className={cn('size-4', allVisibleSelected ? 'opacity-100' : 'opacity-30')} />
-                  Select all{walletSearch ? ' (filtered)' : ''}
-                </button>
-                <div className="max-h-48 overflow-y-auto">
+                <div className="flex items-center justify-between border-b border-border px-3 py-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={toggleAllWallets}
+                    className="text-accent font-semibold hover:underline"
+                  >
+                    {allVisibleSelected ? 'Deselect all' : 'Select all'}
+                  </button>
+                  {eligibleCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleSelectEligibleOnly}
+                      className="text-success font-semibold hover:underline"
+                    >
+                      Select {eligibleCount} Eligible Only
+                    </button>
+                  )}
+                </div>
+                <div className="max-h-56 overflow-y-auto">
                   {visibleWallets.map((wallet) => {
                     const selected = form.walletIds.includes(wallet.id);
+                    const elig = eligibleAddressMap.get(wallet.address.toLowerCase());
+
                     return (
                       <button
                         key={wallet.id}
@@ -453,12 +602,26 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
                         className={cn(
                           'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-surface-2',
                           selected && 'bg-accent-subtle',
+                          elig?.eligible && 'border-l-2 border-success',
                         )}
                       >
                         <Check className={cn('size-4 shrink-0 text-accent', selected ? 'opacity-100' : 'opacity-0')} />
-                        <span className="mono min-w-0 flex-1 truncate text-text-secondary">
-                          {wallet.label ?? wallet.address}
-                        </span>
+                        <div className="min-w-0 flex-1 flex items-center justify-between gap-2">
+                          <span className="mono truncate text-text-secondary text-xs">
+                            {wallet.label ? `${wallet.label} · ` : ''}{wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}
+                          </span>
+                          {elig && (
+                            <span className="shrink-0">
+                              {elig.eligible ? (
+                                <Badge tone="success" className="text-[9px] px-1.5 py-0">
+                                  WHITELISTED
+                                </Badge>
+                              ) : (
+                                <span className="text-[9px] text-text-muted">Not WL</span>
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
@@ -480,9 +643,11 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
         <div className="col-span-12 sm:col-span-8">
           <div className="mb-2 flex items-center justify-between">
             <span className="label">RPC Endpoints</span>
-            <a href="/rpc" className="text-xs text-accent hover:underline">
-              Manage
-            </a>
+            <span className="text-xs text-text-muted">
+              {selectedRpcIds.length} selected
+              {customRpcs.split('\n').filter((u) => u.trim().startsWith('http')).length > 0 &&
+                ` + ${customRpcs.split('\n').filter((u) => u.trim().startsWith('http')).length} custom`}
+            </span>
           </div>
           <div className="relative">
             <button
@@ -491,9 +656,9 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
               className="input-base flex items-center justify-between gap-2 text-left"
             >
               <span className="truncate text-sm text-text-secondary">
-                {allRpcSelected
-                  ? `All ${rpcEndpoints.data?.length ?? 0} endpoints`
-                  : `${selectedRpcIds.length} endpoint${selectedRpcIds.length > 1 ? 's' : ''} selected`}
+                {selectedRpcIds.length === 0 && !customRpcs.trim()
+                  ? 'Default system RPC'
+                  : `${selectedRpcIds.length} saved RPCs selected`}
               </span>
               <ChevronDown
                 className={cn('size-4 shrink-0 text-text-muted transition-transform', rpcMenuOpen && 'rotate-180')}
@@ -503,158 +668,97 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
               <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-[8px] border border-border bg-surface shadow-2xl">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedRpcIds([]);
-                    setRpcMenuOpen(false);
-                  }}
-                  className={cn(
-                    'flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-sm transition-colors hover:bg-surface-2',
-                    allRpcSelected && 'bg-accent-subtle text-accent',
-                  )}
+                  onClick={toggleAllRpcs}
+                  className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left text-sm text-accent transition-colors hover:bg-surface-2"
                 >
-                  <Check className={cn('size-4 text-accent', allRpcSelected ? 'opacity-100' : 'opacity-0')} />
-                  All endpoints (chain defaults)
+                  <Check
+                    className={cn(
+                      'size-4',
+                      selectedRpcIds.length === (rpcEndpoints.data?.length ?? 0) ? 'opacity-100' : 'opacity-30',
+                    )}
+                  />
+                  Select all
                 </button>
                 <div className="max-h-48 overflow-y-auto">
-                  {rpcEndpoints.data?.map((ep) => {
+                  {(rpcEndpoints.data ?? []).map((ep) => {
                     const selected = selectedRpcIds.includes(ep.id);
                     return (
                       <button
                         key={ep.id}
                         type="button"
-                        onClick={() => {
-                          setSelectedRpcIds((prev) => {
-                            const next = selected ? prev.filter((id) => id !== ep.id) : [...prev, ep.id];
-                            return next.length === (rpcEndpoints.data?.length ?? 0) ? [] : next;
-                          });
-                        }}
+                        onClick={() => toggleRpc(ep.id)}
                         className={cn(
-                          'flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-surface-2',
+                          'flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-surface-2',
                           selected && 'bg-accent-subtle',
                         )}
                       >
-                        <span className="flex items-center gap-2">
-                          <Check className={cn('size-4 text-accent', selected ? 'opacity-100' : 'opacity-0')} />
-                          <span className="truncate text-sm text-text-secondary">{ep.label}</span>
-                        </span>
-                        <span className="mono shrink-0 text-[11px] text-text-muted">
-                          {ep.provider}
-                          {ep.lastLatencyMs !== null ? ` ${ep.lastLatencyMs}ms` : ''}
-                        </span>
+                        <Check className={cn('size-4 shrink-0 text-accent', selected ? 'opacity-100' : 'opacity-0')} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-text-primary">{ep.url}</p>
+                          <p className="mono truncate text-xs text-text-muted">{ep.chainKey}</p>
+                        </div>
                       </button>
                     );
                   })}
-                  {(rpcEndpoints.data?.length ?? 0) === 0 && (
-                    <p className="px-3 py-2 text-sm text-text-muted">No saved endpoints for this chain.</p>
-                  )}
                 </div>
               </div>
             )}
           </div>
-          <textarea
-            className="input-base mt-2 min-h-12"
-            value={customRpcs}
-            onChange={(e) => setCustomRpcs(e.target.value)}
-            placeholder="Extra RPC URLs, one per line (optional)"
-          />
         </div>
 
-        {/* Gas Limit + Max Fee + Priority Fee */}
+        {/* Gas Settings */}
         <div className="col-span-12 sm:col-span-4">
-          <Field label="Gas Limit">
+          <Field label="Gas Limit" hint="Auto if empty">
             <UnitInput
               unit="units"
-              type="number"
-              min={21000}
-              max={2000000}
               value={form.gasLimit}
               onChange={(e) => set('gasLimit', e.target.value)}
-              placeholder="auto"
+              placeholder="e.g. 150000"
             />
           </Field>
         </div>
-        <div className="col-span-12 sm:col-span-4">
-          <Field label="Max Fee">
+        <div className="col-span-6 sm:col-span-4">
+          <Field label="Max Fee" hint="Auto if empty">
             <UnitInput
               unit="gwei"
-              type="number"
-              step="0.001"
-              min="0.001"
               value={form.maxFeeGwei}
               onChange={(e) => set('maxFeeGwei', e.target.value)}
-              placeholder="auto"
+              placeholder="e.g. 0.05"
             />
           </Field>
         </div>
-        <div className="col-span-12 sm:col-span-4">
-          <Field label="Priority Fee">
+        <div className="col-span-6 sm:col-span-4">
+          <Field label="Priority Fee" hint="Auto if empty">
             <UnitInput
               unit="gwei"
-              type="number"
-              step="0.001"
-              min="0"
               value={form.maxPriorityGwei}
               onChange={(e) => set('maxPriorityGwei', e.target.value)}
-              placeholder="auto"
-            />
-          </Field>
-        </div>
-        {!gasValid && (
-          <p className="col-span-12 text-sm text-danger">
-            The priority fee must be below the fee ceiling.
-          </p>
-        )}
-
-        {/* Nonce + Timestamp + Delay */}
-        <div className="col-span-12 sm:col-span-4">
-          <Field label="Nonce">
-            <Input
-              type="number"
-              min={0}
-              value={form.nonce}
-              onChange={(e) => set('nonce', e.target.value)}
-              placeholder="auto"
-            />
-          </Field>
-        </div>
-        <div className="col-span-12 sm:col-span-4">
-          <Field label="Timestamp" hint="Unix seconds">
-            <Input
-              type="number"
-              min={0}
-              value={form.timestamp}
-              onChange={(e) => set('timestamp', e.target.value)}
-              placeholder="now"
-            />
-          </Field>
-        </div>
-        <div className="col-span-12 sm:col-span-4">
-          <Field label="Delay">
-            <UnitInput
-              unit="ms"
-              type="number"
-              min={0}
-              value={form.delayMs}
-              onChange={(e) => set('delayMs', Number(e.target.value))}
+              placeholder="e.g. 0.001"
             />
           </Field>
         </div>
 
-        {/* Simulate / Spam / Action */}
-        <div className="col-span-12 flex flex-wrap items-center gap-6">
-          <Toggle checked={form.simulate} onChange={(v) => set('simulate', v)} label="Simulate" />
-          <Toggle checked={form.spam} onChange={(v) => set('spam', v)} label="Spam" />
-          <Toggle checked={form.action} onChange={(v) => set('action', v)} label="Action" />
+        {/* Advanced Execution Settings */}
+        <div className="col-span-12 grid grid-cols-12 gap-3 border-t border-border pt-4">
+          <div className="col-span-6 sm:col-span-3">
+            <Toggle checked={form.spam} onChange={(v) => set('spam', v)} label="Spam (Re-blast)" />
+          </div>
+          <div className="col-span-6 sm:col-span-3">
+            <Toggle checked={form.action} onChange={(v) => set('action', v)} label="Action (Signed WL)" />
+          </div>
+          <div className="col-span-6 sm:col-span-3">
+            <Toggle checked={form.simulate} onChange={(v) => set('simulate', v)} label="Simulate (Dry-run)" />
+          </div>
         </div>
       </div>
 
       <div className="mt-6 flex items-center justify-end gap-3 border-t border-border pt-4">
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="secondary" onClick={onClose} disabled={create.isPending}>
           Cancel
         </Button>
-        <Button onClick={submit} disabled={!canSubmit} loading={create.isPending}>
+        <Button onClick={handleSubmit} loading={create.isPending} disabled={!canSubmit}>
           <Rocket className="size-4" aria-hidden />
-          Create
+          Create Task
         </Button>
       </div>
     </Dialog>
