@@ -5,7 +5,7 @@
 import { Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { Contract, Wallet, parseEther, type Log } from 'ethers';
-import { QUEUES, getChainProfile } from '@mintbot/shared';
+import { QUEUES, getChainProfile, formatEth } from '@mintbot/shared';
 import { buildEngine } from './mint.processor';
 import { decryptPrivateKey, prisma } from '../runtime';
 import { ERC721_ABI } from '../mint-engine/nft-forwarder';
@@ -52,6 +52,22 @@ async function runFundTransfer(jobId: string): Promise<void> {
     const amount = parseEther(String(job.amountEth));
 
     const signer = new Wallet(decryptPrivateKey(fromRow.encryptedKey), engine.provider);
+    const balance = await engine.provider.getBalance(signer.address);
+    const totalRequired = amount * BigInt(toRows.length);
+
+    if (balance < totalRequired) {
+      const errStr = `Insufficient balance: wallet has ${formatEth(balance)} ETH, needs ${formatEth(totalRequired)} ETH for ${toRows.length} transfers`;
+      await prisma.transferJob.update({
+        where: { id: jobId },
+        data: {
+          status: 'failed',
+          error: errStr,
+          completedAt: new Date(),
+        },
+      });
+      return;
+    }
+
     const fee = await engine.provider.getFeeData();
     const results: ResultRow[] = [];
     let nonce = await engine.provider.getTransactionCount(signer.address, 'pending');
@@ -62,10 +78,9 @@ async function runFundTransfer(jobId: string): Promise<void> {
           to: dest.address,
           value: amount,
           nonce: nonce++,
-          gasLimit: 21_000,
+          gasLimit: 25_000,
           ...(fee.maxFeePerGas ? { maxFeePerGas: fee.maxFeePerGas } : {}),
           ...(fee.maxPriorityFeePerGas ? { maxPriorityFeePerGas: fee.maxPriorityFeePerGas } : {}),
-          type: 2,
         });
         const receipt = await tx.wait();
         results.push({

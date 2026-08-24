@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { Banknote, Image as ImageIcon } from 'lucide-react';
+import { Banknote, Image as ImageIcon, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
 import type { ChainView, Paginated, TransferJobView, WalletView } from '@mintbot/shared';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/layout/page-header';
@@ -17,6 +17,17 @@ import { TableSkeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 type Tab = 'fund' | 'sweep';
+
+interface NftInfoData {
+  name: string | null;
+  symbol: string | null;
+  collectionName: string | null;
+  imageUrl: string | null;
+  floorPriceEth: string | null;
+  chainKey: string;
+  contractAddress: string;
+  source: 'opensea' | 'onchain' | 'unknown';
+}
 
 export default function TransfersPage() {
   const queryClient = useQueryClient();
@@ -33,6 +44,29 @@ export default function TransfersPage() {
     refetchInterval: 8_000,
   });
 
+  // Auto-fetch NFT info when tokenContract / link is provided
+  const nftInfo = useQuery({
+    queryKey: ['nft-info', sweep.chainKey, sweep.tokenContract],
+    queryFn: () =>
+      api.get<NftInfoData>(
+        `/transfers/nft-info?chainKey=${sweep.chainKey || 'base'}&address=${encodeURIComponent(sweep.tokenContract.trim())}`,
+      ),
+    enabled: Boolean(sweep.tokenContract.trim().length >= 3),
+    staleTime: 60_000,
+  });
+
+  // Auto-set chain and resolve contract address if user pasted an OpenSea URL
+  useEffect(() => {
+    if (nftInfo.data) {
+      if (nftInfo.data.chainKey && !sweep.chainKey) {
+        const match = chains.data?.find(
+          (c) => c.key.toLowerCase() === nftInfo.data?.chainKey?.toLowerCase(),
+        );
+        if (match) setSweep((prev) => ({ ...prev, chainKey: match.key }));
+      }
+    }
+  }, [nftInfo.data, chains.data, sweep.chainKey]);
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['transfers'] });
 
   const fundMutation = useMutation({
@@ -48,6 +82,7 @@ export default function TransfersPage() {
     mutationFn: () =>
       api.post<TransferJobView>('/transfers/transfer-nft', {
         ...sweep,
+        tokenContract: nftInfo.data?.contractAddress || sweep.tokenContract.trim(),
         fromBlock: sweep.fromBlock ? Number(sweep.fromBlock) : undefined,
       }),
     onSuccess: (job) => {
@@ -203,13 +238,20 @@ export default function TransfersPage() {
                   className="mono"
                 />
               </Field>
-              <Field label="Token contract" hint="The NFT collection address to transfer">
-                <Input
-                  value={sweep.tokenContract}
-                  onChange={(e) => setSweep({ ...sweep, tokenContract: e.target.value })}
-                  placeholder="0x..."
-                  className="mono"
-                />
+              <Field label="Token contract" hint="NFT contract address (0x...) or OpenSea link (Auto-detected)">
+                <div className="relative">
+                  <Input
+                    value={sweep.tokenContract}
+                    onChange={(e) => setSweep({ ...sweep, tokenContract: e.target.value })}
+                    placeholder="0x... or https://opensea.io/assets/... or collection-slug"
+                    className="mono pr-8"
+                  />
+                  {nftInfo.isFetching && (
+                    <div className="absolute right-2.5 top-2.5">
+                      <Loader2 className="size-4 animate-spin text-accent" />
+                    </div>
+                  )}
+                </div>
               </Field>
               <Field label="Scan from block (optional)" hint="Default: last 100k blocks">
                 <Input
@@ -221,6 +263,43 @@ export default function TransfersPage() {
                 />
               </Field>
             </div>
+
+            {/* NFT Metadata Preview Card */}
+            {nftInfo.data && (nftInfo.data.name || nftInfo.data.imageUrl || nftInfo.data.symbol) && (
+              <div className="mt-4 flex items-center gap-3 rounded-[8px] border border-accent/30 bg-accent-subtle/50 p-3">
+                {nftInfo.data.imageUrl ? (
+                  <img
+                    src={nftInfo.data.imageUrl}
+                    alt={nftInfo.data.name || 'NFT'}
+                    className="size-12 rounded-[6px] object-cover border border-border"
+                  />
+                ) : (
+                  <div className="flex size-12 items-center justify-center rounded-[6px] bg-surface-2 border border-border">
+                    <Sparkles className="size-5 text-accent" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium text-text-primary truncate text-sm">
+                      {nftInfo.data.collectionName || nftInfo.data.name}
+                    </p>
+                    {nftInfo.data.symbol && (
+                      <Badge tone="neutral" className="text-[10px] uppercase">
+                        {nftInfo.data.symbol}
+                      </Badge>
+                    )}
+                    <Badge tone={nftInfo.data.source === 'opensea' ? 'accent' : 'success'} className="text-[10px]">
+                      {nftInfo.data.source}
+                    </Badge>
+                  </div>
+                  {nftInfo.data.contractAddress && (
+                    <p className="mono truncate text-xs text-text-secondary mt-0.5">
+                      {nftInfo.data.contractAddress}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between">

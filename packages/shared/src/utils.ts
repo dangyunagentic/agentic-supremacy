@@ -18,20 +18,36 @@ export function shortTx(hash: string): string {
 }
 
 // Accepts a contract address, an OpenSea URL or a bare slug and returns
-// { address?, slug? } so the engine can resolve either way.
+// { address?, slug?, chainKey? } so the engine can resolve either way.
 export function parseCollectionInput(
   input: string,
-): { address?: string; slug?: string } {
+): { address?: string; slug?: string; chainKey?: string } {
   const value = input.trim();
   if (isAddress(value)) return { address: value.toLowerCase() };
 
-  // https://opensea.io/collection/<slug> or .../item/ethereum/<addr>/...
-  const match = value.match(/opensea\.io\/(?:collection|assets)\/([a-z0-9-]+)/i);
-  if (match) {
-    const part = match[1];
-    if (isAddress(part)) return { address: part.toLowerCase() };
-    return { slug: part };
+  // https://opensea.io/assets/<chain>/<addr>/<id> or https://opensea.io/item/<chain>/<addr>/<id>
+  const assetMatch = value.match(/opensea\.io\/(?:assets|item)\/([a-z0-9-]+)\/(0x[a-f0-9]{40})/i);
+  if (assetMatch) {
+    return {
+      chainKey: assetMatch[1].toLowerCase(),
+      address: assetMatch[2].toLowerCase(),
+    };
   }
+
+  // https://opensea.io/collection/<slug>
+  const colMatch = value.match(/opensea\.io\/collection\/([a-z0-9-]+)/i);
+  if (colMatch) {
+    return { slug: colMatch[1].toLowerCase() };
+  }
+
+  // fallback generic URL match
+  const genericMatch = value.match(/opensea\.io\/(?:collection|assets|item)\/([a-z0-9-]+)/i);
+  if (genericMatch) {
+    const part = genericMatch[1];
+    if (isAddress(part)) return { address: part.toLowerCase() };
+    return { slug: part.toLowerCase() };
+  }
+
   return { slug: value.toLowerCase() };
 }
 

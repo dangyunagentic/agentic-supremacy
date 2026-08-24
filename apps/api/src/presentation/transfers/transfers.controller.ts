@@ -10,6 +10,7 @@ import {
   CreateTransferUseCase,
   ListTransfersUseCase,
 } from '../../application/transfers/transfer.use-cases';
+import { GetNftInfoUseCase } from '../../application/transfers/get-nft-info.use-case';
 
 export class CreateFundTransferDto {
   @IsString()
@@ -54,7 +55,13 @@ export class TransfersController {
   constructor(
     private readonly create: CreateTransferUseCase,
     private readonly list: ListTransfersUseCase,
+    private readonly getNftInfo: GetNftInfoUseCase,
   ) {}
+
+  @Get('nft-info')
+  nftInfoAction(@Query('chainKey') chainKey: string, @Query('address') address: string) {
+    return this.getNftInfo.execute(chainKey, address);
+  }
 
   @Post('fund')
   @Throttle({ default: { limit: 10, ttl: 3600_000 } })
