@@ -28,7 +28,8 @@ export class BullMintScheduler implements MintSchedulerPort, OnModuleDestroy {
   }
 
   private jobId(taskId: string): string {
-    return `task:${taskId}`;
+    // BullMQ rejects custom job ids containing ':'; keep a safe separator.
+    return `task_${taskId}`;
   }
 
   async schedulePreflight(taskId: string, runAt: Date): Promise<void> {
@@ -53,7 +54,9 @@ export class BullMintScheduler implements MintSchedulerPort, OnModuleDestroy {
       'transfer',
       { jobId },
       {
-        jobId: `transfer:${jobId}`,
+        // Note: BullMQ rejects custom job ids containing ':'. The transfer job
+        // id is already a unique UUID, so use it directly (no prefix).
+        jobId,
         attempts: 1,
         removeOnComplete: { age: 3600 },
         removeOnFail: { age: 86400 },

@@ -117,22 +117,36 @@ async function runTransferNft(jobId: string): Promise<void> {
     const recipient = job.recipientAddress!;
     const token = job.tokenContract!;
     const currentBlock = await engine.provider.getBlockNumber();
-    const fromBlock = job.fromBlock && job.fromBlock > 0 ? job.fromBlock : Math.max(0, currentBlock - 100_000);
+    const requestedFrom = job.fromBlock && job.fromBlock > 0 ? job.fromBlock : Math.max(0, currentBlock - 100_000);
+    const toBlock = currentBlock;
+
+    // Public RPCs cap eth_getLogs ranges (commonly 10_000 blocks). Walk the
+    // window in safe chunks so large histories don't exceed the cap.
+    const RW_CHECK = 9_000;
+    const chunks: Array<{ from: number; to: number }> = [];
+    for (let f = requestedFrom; f <= toBlock; f += RW_CHECK) {
+      chunks.push({ from: f, to: Math.min(f + RW_CHECK - 1, toBlock) });
+    }
+    if (chunks.length === 0) chunks.push({ from: toBlock, to: toBlock });
 
     const results: ResultRow[] = [];
 
     for (const source of sourceRows) {
       try {
-        const logs: Log[] = await engine.provider.getLogs({
-          address: token,
-          topics: [
-            TRANSFER_TOPIC,
-            null,
-            `0x${source.address.slice(2).toLowerCase().padStart(64, '0')}`,
-          ],
-          fromBlock,
-          toBlock: 'latest',
-        });
+        const logs: Log[] = [];
+        for (const c of chunks) {
+          const part = await engine.provider.getLogs({
+            address: token,
+            topics: [
+              TRANSFER_TOPIC,
+              null,
+              `0x${source.address.slice(2).toLowerCase().padStart(64, '0')}`,
+            ],
+            fromBlock: c.from,
+            toBlock: c.to,
+          });
+          logs.push(...part);
+        }
         const candidateIds = new Set(
           logs
             .map((l) => l.topics[3])
