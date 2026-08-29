@@ -7,9 +7,11 @@ import type { RequestUser } from '../shared/jwt.strategy';
 import { CreateTaskDto, PaginationDto } from '../dto/task.dto';
 import { CreateTaskUseCase } from '../../application/tasks/create-task.use-case';
 import {
+  DeleteTaskUseCase,
   GetTaskUseCase,
   ListTaskLogsUseCase,
   ListTasksUseCase,
+  ResumeTaskUseCase,
   StopTaskUseCase,
 } from '../../application/tasks/task.use-cases';
 
@@ -21,6 +23,8 @@ export class TasksController {
     private readonly list: ListTasksUseCase,
     private readonly get: GetTaskUseCase,
     private readonly stop: StopTaskUseCase,
+    private readonly resume: ResumeTaskUseCase,
+    private readonly remove: DeleteTaskUseCase,
     private readonly logs: ListTaskLogsUseCase,
   ) {}
 
@@ -48,6 +52,16 @@ export class TasksController {
   @Post(':id/stop')
   stopAction(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.stop.execute(id, user);
+  }
+
+  @Post(':id/run')
+  runAction(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.resume.execute(id, user);
+  }
+
+  @Delete(':id')
+  deleteAction(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.remove.execute(id, user);
   }
 
   @Get(':id/logs')

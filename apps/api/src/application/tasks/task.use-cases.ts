@@ -115,6 +115,61 @@ export class StopTaskUseCase {
 }
 
 @Injectable()
+export class ResumeTaskUseCase {
+  constructor(
+    @Inject(TOKENS.TaskRepository) private readonly tasks: TaskRepository,
+    @Inject(TOKENS.MintScheduler) private readonly scheduler: MintSchedulerPort,
+    @Inject(TOKENS.Notifier) private readonly notifier: NotifierPort,
+  ) {}
+
+  async execute(taskId: string, requester: Requester) {
+    const task = await this.tasks.findById(taskId);
+    if (!task) throw new NotFoundError('Task');
+    if (requester.role !== Role.Admin && task.userId !== requester.userId) {
+      throw new NotFoundError('Task');
+    }
+
+    const resumable: TaskStatus[] = [TaskStatus.Failed, TaskStatus.Cancelled, TaskStatus.Draft, TaskStatus.Scheduled];
+    if (!resumable.includes(task.status)) {
+      throw new ValidationError(`Task is ${task.status} — only failed, cancelled, draft, or scheduled tasks can be resumed`);
+    }
+
+    const updated = await this.tasks.updateStatus(taskId, TaskStatus.Scheduled, {
+      completedAt: undefined,
+      startedAt: undefined,
+    });
+
+    // Re-run preflight immediately so the worker resolves the stage start time.
+    await this.scheduler.runNow(taskId);
+    await this.notifier.notifyUser(task.userId, `Task "${task.name}" was resumed and re-scheduled.`);
+    return toTaskView(updated);
+  }
+}
+
+@Injectable()
+export class DeleteTaskUseCase {
+  constructor(
+    @Inject(TOKENS.TaskRepository) private readonly tasks: TaskRepository,
+    @Inject(TOKENS.MintScheduler) private readonly scheduler: MintSchedulerPort,
+    @Inject(TOKENS.Notifier) private readonly notifier: NotifierPort,
+  ) {}
+
+  async execute(taskId: string, requester: Requester) {
+    const task = await this.tasks.findById(taskId);
+    if (!task) throw new NotFoundError('Task');
+    if (requester.role !== Role.Admin && task.userId !== requester.userId) {
+      throw new NotFoundError('Task');
+    }
+
+    // Cancel any pending BullMQ jobs before removing the record.
+    await this.scheduler.cancel(taskId);
+    await this.tasks.delete(taskId);
+    await this.notifier.notifyUser(task.userId, `Task "${task.name}" was deleted.`);
+    return { success: true };
+  }
+}
+
+@Injectable()
 export class ListTaskLogsUseCase {
   constructor(
     @Inject(TOKENS.TaskRepository) private readonly tasks: TaskRepository,

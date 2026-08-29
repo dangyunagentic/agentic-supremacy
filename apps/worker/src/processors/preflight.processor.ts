@@ -115,7 +115,7 @@ export async function runPreflight(taskId: string): Promise<void> {
     'mint',
     { taskId },
     {
-      jobId: `task:${taskId}`,
+      jobId: `task_${taskId}`,
       delay: Math.max(0, mintAt.getTime() - Date.now()),
       attempts: 1,
       removeOnComplete: { age: 3600 },

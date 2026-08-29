@@ -120,7 +120,7 @@ export default function DashboardPage() {
   });
 
   const runNow = useMutation({
-    mutationFn: (id: string) => api.post(`/tasks/${id}/run-now`, {}),
+    mutationFn: (id: string) => api.post(`/tasks/${id}/run`, {}),
     onSuccess: () => {
       toast.success('Task execution triggered now');
       void queryClient.invalidateQueries({ queryKey: ['tasks'] });

@@ -103,4 +103,8 @@ export class PrismaTaskRepository implements TaskRepository {
   async countByStatus(status: Task['status']) {
     return this.prisma.task.count({ where: { status } });
   }
+
+  async delete(id: string) {
+    await this.prisma.task.delete({ where: { id } });
+  }
 }

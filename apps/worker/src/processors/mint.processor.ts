@@ -211,7 +211,7 @@ export async function runMint(taskId: string): Promise<void> {
       'receipt',
       { taskId },
       {
-        jobId: `task:${taskId}`,
+        jobId: `task_${taskId}`,
         delay: 2_000,
         attempts: 1,
         removeOnComplete: { age: 3600 },

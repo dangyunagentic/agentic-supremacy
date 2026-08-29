@@ -19,4 +19,5 @@ export interface TaskRepository {
   findActiveByUser(userId: string): Promise<TaskEntity[]>;
   countAll(): Promise<number>;
   countByStatus(status: TaskStatus): Promise<number>;
+  delete(id: string): Promise<void>;
 }
