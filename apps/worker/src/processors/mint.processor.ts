@@ -139,8 +139,10 @@ export async function runMint(taskId: string): Promise<void> {
     const warmMs = await engine.warm();
     await taskLog(taskId, 'info', `RPC connections warmed in ${warmMs}ms`);
 
-    const signed = await engine.signAll(activeWallets, plan, gas, chainId, task.nonce);
-    await taskLog(taskId, 'success', `Pre-signed ${signed.length} transaction(s)`);
+    const signedAll = await engine.signAll(activeWallets, plan, gas, chainId, task.nonce);
+    const maxTx = task.maxTx && task.maxTx > 0 ? Math.min(task.maxTx, signedAll.length) : signedAll.length;
+    const signed = signedAll.slice(0, maxTx);
+    await taskLog(taskId, 'success', `Pre-signed ${signed.length} transaction(s)${maxTx < signedAll.length ? ` (maxTx limit ${maxTx})` : ''}`);
 
     // ── Simulation (dry-run): build + sign only, never broadcast ──
     if (task.simulate) {
@@ -163,8 +165,9 @@ export async function runMint(taskId: string): Promise<void> {
     // ── Phase 4: wait + dispatch ──
     const fireAt = task.resolvedFireAt ? new Date(task.resolvedFireAt) : null;
     if (fireAt && fireAt.getTime() > Date.now()) {
-      await taskLog(taskId, 'info', `Waiting for stage open at ${fireAt.toISOString()}`);
-      await engine.waitUntil(fireAt);
+      const earlyFireMs = task.earlyFireMs ?? 0;
+      await taskLog(taskId, 'info', `Waiting for stage open at ${fireAt.toISOString()}${earlyFireMs > 0 ? ` (early-fire ${earlyFireMs}ms before T-0)` : ''}`);
+      await engine.waitUntil(fireAt, earlyFireMs);
     }
 
     await setTaskStatus(taskId, TaskStatus.Dispatching);
@@ -190,7 +193,6 @@ export async function runMint(taskId: string): Promise<void> {
       await upsertResult(taskId, wallet, WalletResultStatus.Dispatched, { txHash: d.txHash });
     }
     await taskLog(taskId, 'success', `Blasted ${dispatched.length} tx(s) to ${rpcUrls.length} RPC(s) in ${blastMs}ms`);
-
     // Spam mode: keep re-pushing the same txs to the mempool (bounded window).
     if (task.spam) {
       const spamDeadline = Date.now() + 30_000;

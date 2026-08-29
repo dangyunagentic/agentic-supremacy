@@ -63,6 +63,8 @@ export interface TaskView {
   simulate: boolean;
   spam: boolean;
   action: boolean;
+  maxTx: number | null;
+  earlyFireMs: number;
   status: TaskStatus;
   createdAt: string;
   startedAt: string | null;
@@ -202,6 +204,8 @@ export interface CreateTaskInput {
   simulate?: boolean;
   spam?: boolean;
   action?: boolean;
+  maxTx?: number | null;
+  earlyFireMs?: number;
 }
 
 // ── Eligibility ──

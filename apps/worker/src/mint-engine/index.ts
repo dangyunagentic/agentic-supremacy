@@ -258,8 +258,8 @@ export class MintEngine {
     return warmConnections(this.chain.rpcUrls);
   }
 
-  async waitUntil(fireAt: Date): Promise<void> {
-    await waitForMintTime(fireAt, PRE_SIGN_LEAD_MS);
+  async waitUntil(fireAt: Date, earlyFireMs = 0): Promise<void> {
+    await waitForMintTime(fireAt, PRE_SIGN_LEAD_MS + earlyFireMs);
   }
 
   /** Blast each signed tx to every RPC, optionally with a delay between wallets. */

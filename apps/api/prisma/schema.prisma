@@ -115,6 +115,8 @@ model Task {
   simulate         Boolean  @default(false)
   spam             Boolean  @default(false)
   action           Boolean  @default(false)
+  maxTx            Int?
+  earlyFireMs      Int      @default(0)
   status           TaskStatus   @default(draft)
   resolvedFireAt   DateTime?
   results          TaskResult[]

@@ -28,6 +28,8 @@ export interface TaskEntity {
   simulate: boolean;
   spam: boolean;
   action: boolean;
+  maxTx: number | null;
+  earlyFireMs: number;
   status: TaskStatus;
   resolvedFireAt: Date | null;
   createdAt: Date;

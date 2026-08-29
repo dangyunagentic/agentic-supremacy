@@ -62,6 +62,8 @@ interface NewTaskForm {
   nonce: string;
   timestamp: string;
   delayMs: number;
+  maxTx: string;
+  earlyFireMs: number;
   simulate: boolean;
   spam: boolean;
   action: boolean;
@@ -135,6 +137,8 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
     nonce: '',
     timestamp: '',
     delayMs: 1000,
+    maxTx: '',
+    earlyFireMs: 0,
     simulate: false,
     spam: false,
     action: false,
@@ -326,6 +330,8 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
       nonce: form.nonce === '' ? null : Number(form.nonce),
       fireTimestamp: form.timestamp === '' ? null : Number(form.timestamp),
       delayMs: form.delayMs,
+      maxTx: form.maxTx === '' ? null : Number(form.maxTx),
+      earlyFireMs: form.earlyFireMs,
       simulate: form.simulate,
       spam: form.spam,
       action: form.action,
@@ -340,7 +346,7 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
   const walletsValid = form.walletIds.length > 0 && form.quantity >= 1;
   const fee = form.maxFeeGwei === '' ? NaN : Number(form.maxFeeGwei);
   const prio = form.maxPriorityGwei === '' ? NaN : Number(form.maxPriorityGwei);
-  const gasValid = Number.isNaN(fee) || Number.isNaN(prio) || (prio < fee && fee > 0);
+  const gasValid = Number.isNaN(fee) || Number.isNaN(prio) || prio <= fee;
   const canSubmit = collectionValid && walletsValid && gasValid && !create.isPending;
 
   return (
@@ -736,6 +742,50 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
               placeholder="e.g. 0.001"
             />
           </Field>
+        </div>
+
+        {/* Execution / Speed Settings */}
+        <div className="col-span-12 grid grid-cols-12 gap-3 border-t border-border pt-4">
+          <div className="col-span-6 sm:col-span-3">
+            <Field label="Max Tx" hint="Empty = unlimited">
+              <UnitInput
+                unit="tx"
+                value={form.maxTx}
+                onChange={(e) => set('maxTx', e.target.value)}
+                placeholder="e.g. 50"
+              />
+            </Field>
+          </div>
+          <div className="col-span-6 sm:col-span-3">
+            <Field label="Timestamp" hint="Unix seconds (start)">
+              <UnitInput
+                unit="s"
+                value={form.timestamp}
+                onChange={(e) => set('timestamp', e.target.value)}
+                placeholder="e.g. 1787954395"
+              />
+            </Field>
+          </div>
+          <div className="col-span-6 sm:col-span-3">
+            <Field label="Delay" hint="Between wallets (ms)">
+              <UnitInput
+                unit="ms"
+                value={form.delayMs}
+                onChange={(e) => set('delayMs', Math.max(0, Number(e.target.value)))}
+                placeholder="e.g. 500"
+              />
+            </Field>
+          </div>
+          <div className="col-span-6 sm:col-span-3">
+            <Field label="Early Fire" hint="Blast X ms BEFORE T-0 (fast mint)">
+              <UnitInput
+                unit="ms"
+                value={form.earlyFireMs}
+                onChange={(e) => set('earlyFireMs', Math.min(5000, Math.max(0, Number(e.target.value))))}
+                placeholder="e.g. 400"
+              />
+            </Field>
+          </div>
         </div>
 
         {/* Advanced Execution Settings */}

@@ -100,7 +100,7 @@ export class CreateTaskUseCase {
     if (maxFeeGwei <= 0 || maxPriorityGwei < 0) {
       throw new ValidationError('Gas values must be positive');
     }
-    if (maxPriorityGwei >= maxFeeGwei) {
+    if (maxPriorityGwei > maxFeeGwei) {
       throw new ValidationError('Priority tip must be below the fee ceiling');
     }
     const gasLimit = input.gasLimit ?? ENGINE_DEFAULTS.defaultGasLimit;
@@ -178,6 +178,8 @@ export class CreateTaskUseCase {
       simulate: input.simulate ?? false,
       spam: input.spam ?? false,
       action: input.action ?? false,
+      maxTx: input.maxTx ?? null,
+      earlyFireMs: input.earlyFireMs ?? 0,
       status: TaskStatus.Scheduled,
       resolvedFireAt,
     });
@@ -249,6 +251,8 @@ export function toTaskView(task: TaskEntity): TaskView {
     simulate: task.simulate,
     spam: task.spam,
     action: task.action,
+    maxTx: task.maxTx,
+    earlyFireMs: task.earlyFireMs,
     status: task.status,
     createdAt: task.createdAt.toISOString(),
     startedAt: task.startedAt?.toISOString() ?? null,

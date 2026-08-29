@@ -60,7 +60,7 @@ export class CreateTaskDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  @Min(0.001)
+  @Min(0)
   maxFeeGwei?: number;
 
   @IsOptional()
@@ -145,4 +145,17 @@ export class CreateTaskDto {
   @IsOptional()
   @IsBoolean()
   action?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxTx?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(5000)
+  earlyFireMs?: number;
 }
