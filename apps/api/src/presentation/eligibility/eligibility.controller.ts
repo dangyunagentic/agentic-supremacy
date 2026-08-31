@@ -6,6 +6,7 @@ import { CurrentUser } from '../shared/current-user.decorator';
 import type { RequestUser } from '../shared/jwt.strategy';
 import { CheckEligibilityUseCase } from '../../application/eligibility/check-eligibility.use-case';
 import { ResolveCollectionUseCase } from '../../application/eligibility/resolve-collection.use-case';
+import { RarityScannerUseCase } from '../../application/eligibility/rarity-scanner.use-case';
 
 export class CheckEligibilityDto {
   @IsString()
@@ -31,11 +32,22 @@ export class EligibilityController {
   constructor(
     private readonly check: CheckEligibilityUseCase,
     private readonly resolve: ResolveCollectionUseCase,
+    private readonly rarity: RarityScannerUseCase,
   ) {}
 
   @Get('resolve')
   resolveAction(@Query('input') input: string, @Query('chainKey') chainKey?: string) {
     return this.resolve.execute(input || '', chainKey);
+  }
+
+  @Get('rarity')
+  rarityAction(
+    @Query('input') input: string,
+    @Query('chainKey') chainKey?: string,
+    @Query('maxScan') maxScan?: string,
+  ) {
+    const max = Math.min(Number(maxScan) || 500, 2000);
+    return this.rarity.execute(input || '', chainKey, max);
   }
 
   @Post('check')
