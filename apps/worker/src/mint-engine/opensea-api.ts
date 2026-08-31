@@ -19,6 +19,8 @@ export interface MintStageInfo {
   kind: 'allowlist' | 'fcfs' | 'public' | 'none';
   startTime: string | null;
   endTime: string | null;
+  /** Original stage display name from OpenSea (dev-provided, e.g. "Game WL"). */
+  name: string | null;
 }
 
 export class OpenSeaApiError extends Error {
@@ -92,6 +94,7 @@ export class OpenSeaApiClient {
         collection(slug: $slug, chain: $chain) {
           activeStage {
             __typename
+            name
             startTime
             endTime
           }
@@ -99,13 +102,22 @@ export class OpenSeaApiClient {
       }`;
     const json = await this.graphql(query, { slug, chain: chainKey });
     const stage = json.data?.collection?.activeStage;
-    if (!stage) return { kind: 'none', startTime: null, endTime: null };
-    const kind = stage.__typename?.toLowerCase().includes('fcfs')
+    if (!stage) return { kind: 'none', startTime: null, endTime: null, name: null };
+
+    const raw = `${stage.__typename ?? ''} ${(stage as any).name ?? ''}`.toLowerCase();
+    const kind = raw.includes('fcfs') || raw.includes('first come')
       ? 'fcfs'
-      : stage.__typename?.toLowerCase().includes('allow')
+      : raw.includes('allow') || raw.includes('gtd') || raw.includes('list')
         ? 'allowlist'
-        : 'public';
-    return { kind, startTime: stage.startTime ?? null, endTime: stage.endTime ?? null };
+        : raw.includes('public')
+          ? 'public'
+          : 'fcfs';
+    return {
+      kind,
+      startTime: stage.startTime ?? null,
+      endTime: stage.endTime ?? null,
+      name: (stage as any).name ?? null,
+    };
   }
 
   /** Per-wallet signed mint action. Must be fetched fresh, close to fire time. */

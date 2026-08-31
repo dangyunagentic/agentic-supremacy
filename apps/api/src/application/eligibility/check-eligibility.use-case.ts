@@ -177,6 +177,7 @@ export class CheckEligibilityUseCase {
             mode: stage.kind === 'fcfs' ? 'fcfs' : 'allowlist',
             stageStart: stage.startTime,
             stageEnd: stage.endTime,
+            stageName: stage.name ?? null,
             mintPrice: null,
             maxPerWallet: null,
             wallets: results,

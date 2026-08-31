@@ -194,14 +194,15 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
     }
   }, [resolvedMeta.data?.dropStartTime, form.timestamp]);
 
-  // ── Live Eligibility Check ──
+  // ── Live Eligibility Check (only checks SELECTED wallets) ──
   const eligibilityMutation = useMutation({
     mutationFn: () => {
-      const allWalletIds = (wallets.data ?? []).map((w) => w.id);
+      // Only check the wallets the user has selected in this form
+      const selectedWalletIds = form.walletIds.length > 0 ? form.walletIds : [];
       return api.post<EligibilityReport>('/eligibility/check', {
         collection: form.collection.trim(),
         chainKey: form.chainKey || 'base',
-        walletIds: allWalletIds,
+        walletIds: selectedWalletIds,
         quantity: form.quantity || 1,
       });
     },
@@ -425,8 +426,9 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
                 variant="secondary"
                 onClick={() => eligibilityMutation.mutate()}
                 loading={eligibilityMutation.isPending}
-                disabled={!form.collection.trim()}
+                disabled={!form.collection.trim() || form.walletIds.length === 0}
                 className="shrink-0 gap-1.5 text-xs font-semibold"
+                title={form.walletIds.length === 0 ? 'Select at least one wallet first' : undefined}
               >
                 <ShieldCheck className="size-3.5 text-accent" />
                 Check WL Eligibility
@@ -441,10 +443,10 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-text-primary">Whitelist Scan:</span>
                   <Badge tone={eligibleCount > 0 ? 'success' : 'danger'}>
-                    {eligibleCount} / {(wallets.data ?? []).length} Wallets Whitelisted
+                    {eligibleCount} / {form.walletIds.length || (wallets.data ?? []).length} Wallets Whitelisted
                   </Badge>
                   <span className="text-text-muted uppercase">
-                    (Mode: {eligReport.mode} {eligReport.mintPrice ? `· ${eligReport.mintPrice} ETH` : ''})
+                    (Mode: {eligReport.mode}{eligReport.stageName ? ` · ${eligReport.stageName}` : ''}{eligReport.mintPrice ? ` · ${eligReport.mintPrice} ETH` : ''})
                   </span>
                 </div>
                 {eligibleCount > 0 && (

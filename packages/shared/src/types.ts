@@ -229,6 +229,8 @@ export interface EligibilityReport {
   mode: 'public' | 'allowlist' | 'fcfs' | 'unknown';
   stageStart: string | null;
   stageEnd: string | null;
+  /** Dev-provided stage display name from OpenSea (e.g. "Game WL", "Jacon List"). */
+  stageName?: string | null;
   mintPrice: string | null; // ETH, decimal string
   maxPerWallet: number | null;
   wallets: EligibilityWalletResult[];

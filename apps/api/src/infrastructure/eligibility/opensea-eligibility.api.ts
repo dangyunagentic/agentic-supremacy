@@ -61,21 +61,23 @@ export class OpenSeaEligibilityApi implements EligibilityApiPort {
   async fetchStage(slug: string, chainKey: string) {
     const data = await this.graphql<{
       collection?: {
-        activeStage?: { __typename?: string; startTime?: string | null; endTime?: string | null };
+        activeStage?: { __typename?: string; name?: string | null; startTime?: string | null; endTime?: string | null };
       };
     }>(
-      'query MintStage($slug: String!, $chain: String!) { collection(slug: $slug, chain: $chain) { activeStage { __typename startTime endTime } } }',
+      'query MintStage($slug: String!, $chain: String!) { collection(slug: $slug, chain: $chain) { activeStage { __typename name startTime endTime } } }',
       { slug, chain: chainKey },
     );
     const stage = data.collection?.activeStage;
-    if (!stage) return { kind: 'none' as const, startTime: null, endTime: null };
-    const name = stage.__typename?.toLowerCase() ?? '';
-    const kind = name.includes('fcfs')
+    if (!stage) return { kind: 'none' as const, startTime: null, endTime: null, name: null };
+    const raw = `${stage.__typename ?? ''} ${stage.name ?? ''}`.toLowerCase();
+    const kind = raw.includes('fcfs') || raw.includes('first come')
       ? ('fcfs' as const)
-      : name.includes('allow') || name.includes('guaranteed')
+      : raw.includes('allow') || raw.includes('gtd') || raw.includes('list') || raw.includes('guaranteed')
         ? ('allowlist' as const)
-        : ('public' as const);
-    return { kind, startTime: stage.startTime ?? null, endTime: stage.endTime ?? null };
+        : raw.includes('public')
+          ? ('public' as const)
+          : ('fcfs' as const);
+    return { kind, startTime: stage.startTime ?? null, endTime: stage.endTime ?? null, name: stage.name ?? null };
   }
 
   async fetchWalletAction(slug: string, chainKey: string, address: string) {

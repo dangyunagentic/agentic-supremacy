@@ -85,6 +85,7 @@ export interface EligibilityApiPort {
     kind: 'allowlist' | 'fcfs' | 'public' | 'none';
     startTime: string | null;
     endTime: string | null;
+    name?: string | null;
   }>;
   fetchWalletAction(slug: string, chainKey: string, address: string): Promise<{
     eligible: boolean;
