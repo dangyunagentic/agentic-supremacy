@@ -44,6 +44,9 @@ interface ResolvedCollectionMeta {
   description: string | null;
   totalSupply: number | null;
   source: 'opensea' | 'onchain' | 'unknown';
+  dropStartTime?: number | null;
+  dropEndTime?: number | null;
+  mintPriceWei?: string | null;
 }
 
 interface NewTaskForm {
@@ -182,6 +185,14 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
       if (match) setForm((f) => ({ ...f, chainKey: match.key }));
     }
   }, [resolvedMeta.data?.chainKey, chains.data, form.chainKey]);
+
+  // Auto-fill timestamp from on-chain drop start time (paste CA/link → done)
+  useEffect(() => {
+    const start = resolvedMeta.data?.dropStartTime;
+    if (start && start > 0 && !form.timestamp) {
+      setForm((f) => ({ ...f, timestamp: String(start) }));
+    }
+  }, [resolvedMeta.data?.dropStartTime, form.timestamp]);
 
   // ── Live Eligibility Check ──
   const eligibilityMutation = useMutation({

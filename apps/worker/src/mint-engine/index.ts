@@ -8,7 +8,7 @@ import { buildSignedPlans, type SignedMintPlan } from './seadrop-signed';
 import { UniversalLaunchpadEngine, type UniversalMintPlan } from './universal-launchpad';
 import { blastToAll, waitForReceipt, type BlastResult } from './rpc-blast';
 import { warmConnections } from './connection-warmer';
-import { waitForMintTime } from './timer';
+import { waitForMintTime, waitForChainTime } from './timer';
 import { OpenSeaApiClient } from './opensea-api';
 
 export interface EngineChain {
@@ -259,7 +259,15 @@ export class MintEngine {
   }
 
   async waitUntil(fireAt: Date, earlyFireMs = 0): Promise<void> {
-    await waitForMintTime(fireAt, PRE_SIGN_LEAD_MS + earlyFireMs);
+    // Fire based on the chain's own clock (block timestamp), not the local
+    // wall clock, so we hit the exact on-chain stage-open second.
+    const targetSec = Math.floor(fireAt.getTime() / 1000) + Math.floor(earlyFireMs / 1000);
+    try {
+      await waitForChainTime(this.provider, targetSec, 60_000, 100);
+    } catch {
+      // fallback to wall-clock wait
+      await waitForMintTime(fireAt, PRE_SIGN_LEAD_MS + earlyFireMs);
+    }
   }
 
   /**

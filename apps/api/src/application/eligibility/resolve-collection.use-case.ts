@@ -16,11 +16,20 @@ export interface ResolvedCollectionInfo {
   description: string | null;
   totalSupply: number | null;
   source: 'opensea' | 'onchain' | 'unknown';
+  /** Public SeaDrop stage window (unix seconds). Auto-detected on-chain. */
+  dropStartTime?: number | null;
+  dropEndTime?: number | null;
+  /** Public mint price in wei (decimal string). */
+  mintPriceWei?: string | null;
 }
 
 const ERC721_MINIMAL_ABI = [
   'function name() view returns (string)',
   'function symbol() view returns (string)',
+];
+
+const SEADROP_PUBLIC_ABI = [
+  'function getPublicDrop(address nftContract) view returns (tuple(uint80 mintPrice, uint48 startTime, uint48 endTime, uint16 maxTotalMintableByWallet, uint16 feeBps, bool restrictFeeRecipients))',
 ];
 
 const OPENSEA_CHAIN_MAP: Record<string, string> = {
@@ -106,6 +115,7 @@ export class ResolveCollectionUseCase {
       const onchainData = await this.fetchOnChain(targetChain, parsed.address);
       if (onchainData) return onchainData;
 
+      const dropInfo = await this.fetchDropInfo(targetChain, parsed.address);
       return {
         name: null,
         slug: null,
@@ -117,6 +127,9 @@ export class ResolveCollectionUseCase {
         description: null,
         totalSupply: null,
         source: 'unknown',
+        dropStartTime: dropInfo?.startTime ?? null,
+        dropEndTime: dropInfo?.endTime ?? null,
+        mintPriceWei: dropInfo?.mintPrice ?? null,
       };
     }
 
@@ -151,6 +164,37 @@ export class ResolveCollectionUseCase {
       totalSupply: null,
       source: 'unknown',
     };
+  }
+
+  /** Reads SeaDrop public drop start/end/price on-chain (if this is a SeaDrop contract). */
+  private async fetchDropInfo(
+    chainKey: string,
+    address: string,
+  ): Promise<{ startTime: number; endTime: number; mintPrice: string } | null> {
+    try {
+      const chain = await this.chains.findByKey(chainKey);
+      if (!chain) return null;
+      const rpcUrl = chain.publicRpcs?.[0];
+      if (!rpcUrl) return null;
+
+      const seadropAddress = chain.seadropAddress;
+      if (!seadropAddress) return null;
+
+      const provider = new ethers.JsonRpcProvider(rpcUrl);
+      const seadrop = new Contract(seadropAddress, SEADROP_PUBLIC_ABI, provider);
+      const drop = await seadrop.getPublicDrop(address);
+      const startTime = Number(drop.startTime);
+      const endTime = Number(drop.endTime);
+      if (startTime === 0 && endTime === 0) return null;
+      void provider.destroy();
+      return {
+        startTime,
+        endTime,
+        mintPrice: BigInt(drop.mintPrice).toString(),
+      };
+    } catch {
+      return null;
+    }
   }
 
   private async fetchByContract(chainKey: string, address: string): Promise<ResolvedCollectionInfo | null> {
