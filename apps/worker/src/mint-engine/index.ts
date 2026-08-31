@@ -3,7 +3,7 @@
 
 import { JsonRpcProvider, Wallet, keccak256, getBytes, toUtf8Bytes, type Provider } from 'ethers';
 import { gweiToWei, PRE_SIGN_LEAD_MS } from '@mintbot/shared';
-import { buildLocalMintPlan, fetchPublicDrop, type LocalMintPlan } from './seadrop-public';
+import { buildLocalMintPlan, fetchPublicDrop, type LocalMintPlan, type PublicDrop } from './seadrop-public';
 import { buildSignedPlans, type SignedMintPlan } from './seadrop-signed';
 import { UniversalLaunchpadEngine, type UniversalMintPlan } from './universal-launchpad';
 import { blastToAll, waitForReceipt, type BlastResult } from './rpc-blast';
@@ -262,6 +262,51 @@ export class MintEngine {
     await waitForMintTime(fireAt, PRE_SIGN_LEAD_MS + earlyFireMs);
   }
 
+  /**
+   * Hard on-chain gate: polls the SeaDrop contract until the public drop
+   * startTime has actually passed on-chain. Prevents blasting N seconds
+   * before the stage opens (which reverts with NotActive). Bounded by timeout.
+   */
+  async waitForStageOpen(
+    nftContract: string,
+    expectedStart?: number | null,
+    timeoutMs = 30_000,
+    pollMs = 250,
+  ): Promise<{ startTime: number; endTime: number } | null> {
+    const deadline = Date.now() + timeoutMs;
+    let lastDrop: PublicDrop | null = null;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        lastDrop = await fetchPublicDrop(this.provider, this.chain.seadropAddress, nftContract);
+        if (lastDrop && lastDrop.startTime > 0) {
+          const nowSec = Math.floor(Date.now() / 1000);
+          if (nowSec >= lastDrop.startTime) {
+            return { startTime: lastDrop.startTime, endTime: lastDrop.endTime };
+          }
+        } else if (expectedStart) {
+          // No drop configured yet but we know the expected start — wait for it.
+          const nowSec = Math.floor(Date.now() / 1000);
+          if (nowSec >= expectedStart) {
+            return { startTime: expectedStart, endTime: 0 };
+          }
+        }
+      } catch {
+        // transient RPC error, keep polling
+      }
+      if (Date.now() > deadline) break;
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+    // Timeout: if we know the expected start, return it so caller can decide.
+    if (expectedStart) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec >= expectedStart) return { startTime: expectedStart, endTime: 0 };
+    }
+    return lastDrop && lastDrop.startTime > 0
+      ? { startTime: lastDrop.startTime, endTime: lastDrop.endTime }
+      : null;
+  }
+
   /** Blast each signed tx to every RPC, optionally with a delay between wallets. */
   async blastAll(signed: SignedTx[], delayMs = 0): Promise<DispatchedTx[]> {
     const dispatched: DispatchedTx[] = [];
@@ -332,6 +377,68 @@ export class MintEngine {
   async getReceiptLogs(txHash: string) {
     const receipt = await this.provider.getTransactionReceipt(txHash);
     return receipt?.logs ?? [];
+  }
+
+  /**
+   * Decode the revert reason of a failed tx by re-simulating the call at the
+   * same block. Returns the raw revert string (e.g. "NotActive(...)") or null.
+   */
+  async decodeRevertReason(txHash: string): Promise<string | null> {
+    try {
+      const tx = await this.provider.getTransaction(txHash);
+      if (!tx) return null;
+      const blockNumber = tx.blockNumber ?? undefined;
+      const callReq = {
+        from: tx.from,
+        to: tx.to ?? undefined,
+        data: tx.data,
+        value: tx.value,
+        blockTag: blockNumber ?? 'latest',
+      };
+      try {
+        await this.provider.call(callReq as any);
+        return null; // call succeeded (unlikely for a reverted tx)
+      } catch (err: any) {
+        const msg = typeof err?.shortMessage === 'string' ? err.shortMessage : String(err?.message ?? err);
+        return msg || null;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  /** Fetch the latest pending nonce for a wallet (used after a revert). */
+  async getPendingNonce(address: string): Promise<number> {
+    return this.provider.getTransactionCount(address, 'pending');
+  }
+
+  /** Sign a single raw tx (re-sign with a new nonce after a NotActive revert). */
+  async signSingle(
+    privateKey: string,
+    to: string,
+    data: string,
+    value: bigint,
+    gas: GasSpec,
+    chainId: number,
+    nonce: number,
+  ): Promise<SignedTx> {
+    const wallet = new Wallet(privateKey);
+    const rawTx = await wallet.signTransaction({
+      chainId,
+      nonce,
+      to,
+      data,
+      value,
+      gasLimit: BigInt(gas.gasLimit),
+      maxFeePerGas: gweiToWei(gas.maxFeeGwei),
+      maxPriorityFeePerGas: gweiToWei(gas.maxPriorityGwei),
+      type: 2,
+    });
+    return {
+      walletAddress: wallet.address.toLowerCase(),
+      rawTx,
+      txHash: keccak256(rawTx),
+    };
   }
 
   async destroy(): Promise<void> {

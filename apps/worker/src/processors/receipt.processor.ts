@@ -96,14 +96,92 @@ export async function runReceipt(taskId: string): Promise<void> {
           wallet.index,
         );
       } else {
-        failed++;
-        await upsertResult(taskId, wallet, WalletResultStatus.Reverted, {
-          txHash: outcome.txHash,
-          blockNumber: outcome.blockNumber,
-          gasUsed: outcome.gasUsed,
-          errorMessage: 'Reverted',
-        });
-        await taskLog(taskId, 'error', `[W${wallet.index}] REVERTED tx ${outcome.txHash}`, wallet.index);
+        // ── Auto-retry on NotActive (fired before stage opened) ──
+        const reason = await engine.decodeRevertReason(outcome.txHash);
+        const isNotActive = reason && reason.includes('NotActive');
+        if (isNotActive && task.mintMode === 'public' && /^0x[a-fA-F0-9]{40}$/.test(task.collection)) {
+          await taskLog(taskId, 'warn', `[W${wallet.index}] NotActive revert — waiting for stage open then retrying`, wallet.index);
+
+          // 1. Wait for the on-chain stage to actually open (bounded).
+          const gate = await engine.waitForStageOpen(task.collection, null, 30_000, 250);
+          if (gate && gate.startTime > 0) {
+            const waitMs = Math.max(0, gate.startTime * 1000 - Date.now());
+            if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs + 250));
+          } else {
+            await new Promise((r) => setTimeout(r, 1_500));
+          }
+
+          try {
+            // 2. Re-build the mint plan, re-sign with a fresh nonce, re-blast.
+            const { mode } = await engine.resolveMode(task.mintMode, task.collection);
+            const plan = await engine.buildPlan(mode, task.collection, task.quantity, [wallet]);
+            const value =
+              plan.kind === 'public' ? plan.shared!.value : plan.perWallet![0]?.value ?? 0n;
+            const to =
+              plan.kind === 'public' ? plan.shared!.to : plan.perWallet![0]?.to;
+            const data =
+              plan.kind === 'public' ? plan.shared!.data : plan.perWallet![0]?.data;
+            if (!to || data === undefined) throw new Error('No mint action for retry');
+
+            const nonce = await engine.getPendingNonce(wallet.address);
+            const chainId = await engine.assertNetwork();
+            const signed = await engine.signSingle(
+              wallet.privateKey,
+              to,
+              data,
+              value,
+              { maxFeeGwei: task.maxFeeGwei, maxPriorityGwei: task.maxPriorityGwei, gasLimit: task.gasLimit },
+              chainId,
+              nonce,
+            );
+            await engine.blastAll([signed], 0);
+            await upsertResult(taskId, wallet, WalletResultStatus.Dispatched, { txHash: signed.txHash });
+            await taskLog(taskId, 'info', `[W${wallet.index}] Re-blasted after stage open: ${signed.txHash}`, wallet.index);
+
+            // 3. Poll the new receipt (bounded).
+            const retryOutcome = await engine.collectReceipts(
+              [{ walletAddress: wallet.address, rawTx: '', txHash: signed.txHash, results: [] }],
+              { timeoutMs, baseMs, maxMs },
+            );
+            const retry = retryOutcome[0];
+            if (retry && retry.found && retry.status === 1) {
+              success++;
+              successByWallet.set(wallet.address, retry.txHash);
+              await upsertResult(taskId, wallet, WalletResultStatus.Success, {
+                txHash: retry.txHash,
+                blockNumber: retry.blockNumber,
+                gasUsed: retry.gasUsed,
+              });
+              await taskLog(taskId, 'success', `[W${wallet.index}] RETRY SUCCESS ${retry.txHash}`, wallet.index);
+            } else {
+              failed++;
+              await upsertResult(taskId, wallet, WalletResultStatus.Reverted, {
+                txHash: retry?.txHash ?? signed.txHash,
+                blockNumber: retry?.blockNumber ?? null,
+                gasUsed: retry?.gasUsed ?? null,
+                errorMessage: 'Reverted on retry',
+              });
+              await taskLog(taskId, 'error', `[W${wallet.index}] RETRY FAILED ${retry?.txHash ?? signed.txHash}`, wallet.index);
+            }
+          } catch (err) {
+            failed++;
+            await upsertResult(taskId, wallet, WalletResultStatus.Reverted, {
+              txHash: outcome.txHash,
+              blockNumber: outcome.blockNumber,
+              errorMessage: `Retry error: ${(err as Error).message}`,
+            });
+            await taskLog(taskId, 'error', `[W${wallet.index}] retry failed: ${(err as Error).message}`, wallet.index);
+          }
+        } else {
+          failed++;
+          await upsertResult(taskId, wallet, WalletResultStatus.Reverted, {
+            txHash: outcome.txHash,
+            blockNumber: outcome.blockNumber,
+            gasUsed: outcome.gasUsed,
+            errorMessage: reason ? `Reverted: ${reason}` : 'Reverted',
+          });
+          await taskLog(taskId, 'error', `[W${wallet.index}] REVERTED tx ${outcome.txHash}${reason ? ` (${reason})` : ''}`, wallet.index);
+        }
       }
     }
 

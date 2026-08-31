@@ -170,6 +170,22 @@ export async function runMint(taskId: string): Promise<void> {
       await engine.waitUntil(fireAt, earlyFireMs);
     }
 
+    // Hard on-chain gate: never blast before the SeaDrop stage is actually open.
+    // Prevents NotActive reverts caused by firing early (e.g. stale resolvedFireAt).
+    const isAddress = /^0x[a-fA-F0-9]{40}$/.test(task.collection);
+    const expectedStart = fireAt ? Math.floor(fireAt.getTime() / 1000) : null;
+    if (task.mintMode === 'public' && isAddress) {
+      const gate = await engine.waitForStageOpen(task.collection, expectedStart, 30_000, 200);
+      if (gate) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const waitMs = Math.max(0, gate.startTime * 1000 - Date.now());
+        await taskLog(taskId, 'info', `Stage gate: on-chain start ${gate.startTime} (now ${nowSec}), waiting ${waitMs}ms`);
+        if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+      } else {
+        await taskLog(taskId, 'warn', 'Stage gate: could not confirm on-chain start, proceeding anyway');
+      }
+    }
+
     await setTaskStatus(taskId, TaskStatus.Dispatching);
 
     // Flashbots private relay (optional); falls back to public RPC on failure.
