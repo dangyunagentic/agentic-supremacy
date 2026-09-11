@@ -247,13 +247,14 @@ export interface TransferResultEntry {
 
 export interface TransferJobView {
   id: string;
-  kind: 'fund' | 'transfer_nft';
+  kind: 'fund' | 'transfer_nft' | 'disperse' | 'consolidate';
   chainKey: string;
   fromWalletAddress: string | null;
   recipientAddress: string | null;
   targetCount: number;
   amountEth: string | null;
   tokenContract: string | null;
+  tokenSymbol: string | null;
   status: 'queued' | 'running' | 'completed' | 'failed';
   results: TransferResultEntry[];
   error: string | null;
@@ -275,4 +276,87 @@ export interface RpcEndpointView {
   rpcLatencyMs: number | null;
   isDefault: boolean;
   createdAt: string;
+}
+
+// ── Wallet manager ──
+
+export interface TokenBalance {
+  symbol: string;
+  address: string;
+  decimals: number;
+  balanceWei: string;
+  balance: string;
+}
+
+export interface WalletBalanceView {
+  id: string;
+  address: string;
+  label: string | null;
+  chainId: number;
+  chainKey: string;
+  nativeSymbol: string;
+  nativeBalanceWei: string;
+  nativeBalance: string;
+  tokens: TokenBalance[];
+}
+
+export interface DisperseEntry {
+  address: string; // destination 0x address
+  amountEth: string; // decimal ETH
+}
+
+export type ConsolidationMode = 'native' | 'erc20';
+
+export interface ConsolidateInput {
+  chainKey: string;
+  mode: ConsolidationMode;
+  tokenContract?: string; // required for erc20
+  tokenSymbol?: string;
+  fromWalletIds: string[]; // wallets to drain
+  toAddress: string; // destination
+}
+
+export interface DisperseInput {
+  chainKey: string;
+  fromWalletId: string;
+  entries: DisperseEntry[];
+}
+
+// ── Social automation ──
+
+export type SocialPlatform = 'gmail' | 'x' | 'discord';
+
+export type SocialActionType =
+  | 'x_follow'
+  | 'x_unfollow'
+  | 'x_reply'
+  | 'x_repost'
+  | 'form_submit'
+  | 'wallet_submit'
+  | 'captcha_solve';
+
+export interface SocialAccountView {
+  id: string;
+  platform: SocialPlatform;
+  username: string;
+  email: string | null;
+  displayName: string | null;
+  proxy: string | null;
+  status: 'connected' | 'error' | 'disconnected';
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SocialRunView {
+  id: string;
+  accountId: string | null;
+  action: SocialActionType;
+  proxy: string | null;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  input: unknown;
+  result: unknown;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
 }

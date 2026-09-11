@@ -57,14 +57,16 @@ export class PrismaTransferJobRepository implements TransferJobRepository {
 
   async create(data: {
     userId: string;
-    kind: 'fund' | 'transfer_nft';
+    kind: 'fund' | 'transfer_nft' | 'disperse' | 'consolidate';
     chainKey: string;
     fromWalletId?: string | null;
     toWalletIds: string[];
     recipientAddress?: string | null;
     amountEth?: string | null;
     tokenContract?: string | null;
+    tokenSymbol?: string | null;
     fromBlock?: number | null;
+    results?: TransferResultRow[];
   }): Promise<TransferJobEntity> {
     const row = await this.prisma.transferJob.create({
       data: {
@@ -76,9 +78,10 @@ export class PrismaTransferJobRepository implements TransferJobRepository {
         recipientAddress: data.recipientAddress ?? null,
         amountEth: data.amountEth ?? null,
         tokenContract: data.tokenContract ?? null,
+        tokenSymbol: data.tokenSymbol ?? null,
         fromBlock: data.fromBlock ?? null,
         status: 'queued',
-        results: [],
+        results: (data.results ?? []) as object[],
       },
     });
     return this.fromRow(row);
@@ -132,6 +135,7 @@ export class PrismaTransferJobRepository implements TransferJobRepository {
     recipientAddress: string | null;
     amountEth: { toString(): string } | null;
     tokenContract: string | null;
+    tokenSymbol: string | null;
     fromBlock: number | null;
     status: string;
     results: unknown;

@@ -19,6 +19,7 @@ import { AdminModule } from './presentation/admin/admin.module';
 import { EligibilityModule } from './presentation/eligibility/eligibility.module';
 import { TransfersModule } from './presentation/transfers/transfers.module';
 import { RpcEndpointsModule } from './presentation/rpc/rpc-endpoints.module';
+import { SocialModule } from './presentation/social/social.module';
 import { AppErrorFilter } from './presentation/shared/app-error.filter';
 import { JwtAuthGuard } from './presentation/shared/jwt.strategy';
 import { RolesGuard } from './presentation/shared/roles.guard';
@@ -43,6 +44,7 @@ import { RolesGuard } from './presentation/shared/roles.guard';
     EligibilityModule,
     TransfersModule,
     RpcEndpointsModule,
+    SocialModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AppErrorFilter },

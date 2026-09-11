@@ -3,7 +3,7 @@ import { TOKENS } from '../../domain/tokens';
 import type { WalletRepository } from '../../domain/repositories/wallet.repository';
 import type { ChainQueryPort, KeyEncryptionPort } from '../../domain/ports/ports';
 import { NotFoundError, ValidationError } from '../common/app-error';
-import { formatEth } from '@mintbot/shared';
+import { formatEth, TRACKED_TOKENS, NATIVE_TOKEN_ADDRESS, getChainProfile } from '@mintbot/shared';
 import { toWalletView } from './create-wallet.use-case';
 
 @Injectable()
@@ -35,6 +35,7 @@ export class DeleteWalletUseCase {
     if (!wallet) throw new NotFoundError('Wallet');
     if (!isAdmin && wallet.userId !== requesterId) throw new NotFoundError('Wallet');
     await this.wallets.delete(walletId);
+    return { success: true };
   }
 }
 
@@ -68,6 +69,73 @@ export class GetWalletBalanceUseCase {
     const wei = await this.chainQuery.getNativeBalance(chainKey, wallet.address);
     return { address: wallet.address, chainKey, balanceWei: wei.toString(), balance: formatEth(wei) };
   }
+}
+
+@Injectable()
+export class GetWalletPortfolioUseCase {
+  constructor(
+    @Inject(TOKENS.WalletRepository) private readonly wallets: WalletRepository,
+    @Inject(TOKENS.ChainQuery) private readonly chainQuery: ChainQueryPort,
+  ) {}
+
+  /** Returns native balance + tracked ERC-20 balances for a wallet on a chain. */
+  async execute(walletId: string, requesterId: string, isAdmin: boolean, chainKey: string) {
+    const wallet = await this.wallets.findById(walletId);
+    if (!wallet) throw new NotFoundError('Wallet');
+    if (!isAdmin && wallet.userId !== requesterId) throw new NotFoundError('Wallet');
+    if (!chainKey) throw new ValidationError('Chain is required');
+
+    const profile = getChainProfile(chainKey);
+    if (!profile) throw new ValidationError('Unknown chain');
+
+    const nativeWei = await this.chainQuery.getNativeBalance(chainKey, wallet.address);
+    const tracked = TRACKED_TOKENS[chainKey.toLowerCase()] ?? [];
+
+    const tokens = await Promise.all(
+      tracked.map(async (t) => {
+        try {
+          const res = await this.chainQuery.getTokenBalance(chainKey, wallet.address, t.address);
+          const decimals = t.decimals || res.decimals;
+          const balance = formatToken(res.balance, decimals);
+          return {
+            symbol: t.symbol,
+            address: t.address,
+            decimals,
+            balanceWei: res.balance.toString(),
+            balance,
+          };
+        } catch {
+          return {
+            symbol: t.symbol,
+            address: t.address,
+            decimals: t.decimals,
+            balanceWei: '0',
+            balance: '0',
+          };
+        }
+      }),
+    );
+
+    return {
+      id: wallet.id,
+      address: wallet.address,
+      label: wallet.label,
+      chainId: profile.chainId,
+      chainKey,
+      nativeSymbol: profile.nativeSymbol,
+      nativeBalanceWei: nativeWei.toString(),
+      nativeBalance: formatEth(nativeWei),
+      tokens,
+    };
+  }
+}
+
+function formatToken(wei: bigint, decimals: number): string {
+  const divisor = 10n ** BigInt(decimals);
+  const whole = wei / divisor;
+  const frac = wei % divisor;
+  const fracStr = frac.toString().padStart(decimals, '0').replace(/0+$/, '');
+  return fracStr ? `${whole}.${fracStr}` : whole.toString();
 }
 
 @Injectable()

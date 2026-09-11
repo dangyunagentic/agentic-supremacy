@@ -73,6 +73,11 @@ export interface TelegramLinkPort {
 /** Read-only on-chain queries used by the API (balances, drop lookups). */
 export interface ChainQueryPort {
   getNativeBalance(chainKey: string, address: string): Promise<bigint>;
+  getTokenBalance(
+    chainKey: string,
+    address: string,
+    token: string,
+  ): Promise<{ balance: bigint; decimals: number; symbol: string }>;
   getPublicDropStart(chainKey: string, collection: string): Promise<number | null>;
   getPublicDrop(chainKey: string, collection: string): Promise<import('@mintbot/shared').PublicDropInfo | null>;
   pingRpc(url: string): Promise<{ vps: number; rpc: number }>;
@@ -90,5 +95,20 @@ export interface EligibilityApiPort {
   fetchWalletAction(slug: string, chainKey: string, address: string): Promise<{
     eligible: boolean;
     reason: string;
+  }>;
+}
+
+/** Executes off-chain social/automation actions with proxy routing support. */
+export interface SocialExecutorPort {
+  /** Test whether the account's credentials + proxy are usable. */
+  validateConnection(platform: string, credentials: string, proxy: string | null): Promise<{
+    ok: boolean;
+    detail?: string;
+  }>;
+  /** Execute a single automation action. Returns an opaque result payload. */
+  execute(action: string, credentials: string, proxy: string | null, input: unknown): Promise<{
+    ok: boolean;
+    detail?: string;
+    output?: unknown;
   }>;
 }

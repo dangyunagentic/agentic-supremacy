@@ -60,30 +60,10 @@ export function blastToAll(
   const { txHash, body } = prepareBlast(rawTx);
   const parsed = parseRpcEndpoints(endpoints);
 
-  const firePromises = parsed.map((ep) =>
-    fetch(ep.url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body,
-    }).then(async (res): Promise<BlastResult> => {
-      const text = await res.text();
-      let json: { result?: string; error?: { message?: string } } | null = null;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        return { label: ep.label, txHash: null, ok: false, message: `non-JSON: ${text.slice(0, 80)}` };
-      }
-      if (json?.result) {
-        return { label: ep.label, txHash: json.result, ok: true };
-      }
-      const message = json?.error?.message ?? text.slice(0, 120);
-      // Already-in-mempool counts as accepted.
-      if (/already known|already imported|replacement transaction/i.test(message)) {
-        return { label: ep.label, txHash, ok: true, message: 'already known' };
-      }
-      return { label: ep.label, txHash: null, ok: false, message };
-    }),
-  );
+  const firePromises = parsed.map((ep) => {
+    if (/^wss?:\/\//i.test(ep.url)) return blastWs(ep, body, txHash);
+    return blastHttp(ep, body, txHash);
+  });
 
   const responsePromise = Promise.allSettled(firePromises).then((settled) =>
     settled.map((s) =>
@@ -94,6 +74,92 @@ export function blastToAll(
   );
 
   return { txHash, responsePromise };
+}
+
+function blastHttp(ep: RpcEndpoint, body: string, txHash: string): Promise<BlastResult> {
+  return fetch(ep.url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body,
+  }).then(async (res): Promise<BlastResult> => {
+    const text = await res.text();
+    let json: { result?: string; error?: { message?: string } } | null = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return { label: ep.label, txHash: null, ok: false, message: `non-JSON: ${text.slice(0, 80)}` };
+    }
+    return parseBlastResult(ep, json, text, txHash);
+  });
+}
+
+function blastWs(ep: RpcEndpoint, body: string, txHash: string): Promise<BlastResult> {
+  return new Promise((resolve) => {
+    if (typeof WebSocket === 'undefined') {
+      resolve({ label: ep.label, txHash: null, ok: false, message: 'WebSocket unavailable' });
+      return;
+    }
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(ep.url);
+    } catch (err) {
+      resolve({ label: ep.label, txHash: null, ok: false, message: String(err).slice(0, 120) });
+      return;
+    }
+    let done = false;
+    const settle = (r: BlastResult) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+      resolve(r);
+    };
+    const timer = setTimeout(
+      () => settle({ label: ep.label, txHash: null, ok: false, message: 'WebSocket timeout' }),
+      10_000,
+    );
+    ws.onopen = () => {
+      try {
+        ws.send(body);
+      } catch (err) {
+        settle({ label: ep.label, txHash: null, ok: false, message: String(err).slice(0, 120) });
+      }
+    };
+    ws.onmessage = (ev: MessageEvent) => {
+      let json: { result?: string; error?: { message?: string } } | null = null;
+      const raw = typeof ev.data === 'string' ? ev.data : String(ev.data);
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        settle({ label: ep.label, txHash: null, ok: false, message: `non-JSON: ${raw.slice(0, 80)}` });
+        return;
+      }
+      settle(parseBlastResult(ep, json, raw, txHash));
+    };
+    ws.onerror = () => settle({ label: ep.label, txHash: null, ok: false, message: 'WebSocket error' });
+    ws.onclose = () => settle({ label: ep.label, txHash: null, ok: false, message: 'WebSocket closed' });
+  });
+}
+
+function parseBlastResult(
+  ep: RpcEndpoint,
+  json: { result?: string; error?: { message?: string } } | null,
+  text: string,
+  txHash: string,
+): BlastResult {
+  if (json?.result) {
+    return { label: ep.label, txHash: json.result, ok: true };
+  }
+  const message = json?.error?.message ?? text.slice(0, 120);
+  // Already-in-mempool counts as accepted.
+  if (/already known|already imported|replacement transaction/i.test(message)) {
+    return { label: ep.label, txHash, ok: true, message: 'already known' };
+  }
+  return { label: ep.label, txHash: null, ok: false, message };
 }
 
 export function anyAccepted(results: BlastResult[]): boolean {

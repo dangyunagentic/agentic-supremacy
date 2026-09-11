@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Contract, JsonRpcProvider } from 'ethers';
-import { getChainProfile, type PublicDropInfo } from '@mintbot/shared';
+import { getChainProfile, jsonRpcRequest, type PublicDropInfo } from '@mintbot/shared';
 import { TOKENS } from '../../domain/tokens';
 import type { ChainQueryPort } from '../../domain/ports/ports';
 import type { ChainRepository } from '../../domain/repositories/system.repository';
@@ -8,6 +8,13 @@ import { NotFoundError } from '../../application/common/app-error';
 
 const PUBLIC_DROP_ABI = [
   'function getPublicDrop(address nftContract) view returns (tuple(uint80 mintPrice, uint48 startTime, uint48 endTime, uint16 maxTotalMintableByWallet, uint16 feeBps, bool restrictFeeRecipients))',
+];
+
+const TOKEN_ABI = [
+  'function balanceOf(address account) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function transfer(address to, uint256 amount) returns (bool)',
 ];
 
 /** Read-only chain access for the API process. The worker owns execution. */
@@ -34,6 +41,30 @@ export class EthersChainQuery implements ChainQueryPort {
     const provider = new JsonRpcProvider(await this.primaryRpc(chainKey));
     try {
       return await provider.getBalance(address);
+    } finally {
+      await provider.destroy();
+    }
+  }
+
+  async getTokenBalance(
+    chainKey: string,
+    address: string,
+    token: string,
+  ): Promise<{ balance: bigint; decimals: number; symbol: string }> {
+    const provider = new JsonRpcProvider(await this.primaryRpc(chainKey));
+    try {
+      const iface = TOKEN_ABI;
+      const contract = new Contract(token, iface, provider);
+      const [balance, decimals, symbol] = await Promise.all([
+        contract.balanceOf(address),
+        contract.decimals(),
+        contract.symbol(),
+      ]);
+      return {
+        balance: BigInt(balance),
+        decimals: Number(decimals),
+        symbol: String(symbol),
+      };
     } finally {
       await provider.destroy();
     }
@@ -76,8 +107,18 @@ export class EthersChainQuery implements ChainQueryPort {
   async pingRpc(url: string): Promise<{ vps: number; rpc: number }> {
     const body = JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 });
     const samples: { vps: number; rpc: number }[] = [];
+    const isWs = /^wss?:\/\//i.test(url);
     for (let i = 0; i < 3; i++) {
       const t0 = performance.now();
+      if (isWs) {
+        // WebSocket transport: measure a full round-trip (vps). ttfb is
+        // approximated as the open+request round trip; there is no separate
+        // header-first signal, so both metrics track the same sample.
+        await jsonRpcRequest(url, 'eth_blockNumber', []);
+        const total = performance.now() - t0;
+        samples.push({ vps: total, rpc: total });
+        continue;
+      }
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

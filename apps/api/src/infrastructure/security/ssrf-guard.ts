@@ -61,8 +61,8 @@ export async function assertSafePublicUrl(rawUrl: string): Promise<void> {
     throw new Error('Invalid URL');
   }
 
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('Only http(s) URLs are allowed');
+  if (url.protocol !== 'http:' && url.protocol !== 'https:' && url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+    throw new Error('Only http(s) and ws(s) URLs are allowed');
   }
 
   const host = hostOf(url);

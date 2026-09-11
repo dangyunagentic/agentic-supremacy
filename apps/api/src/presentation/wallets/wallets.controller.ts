@@ -11,6 +11,7 @@ import {
   DeleteWalletUseCase,
   ExportWalletKeyUseCase,
   GetWalletBalanceUseCase,
+  GetWalletPortfolioUseCase,
   ListWalletsUseCase,
   RenameWalletUseCase,
 } from '../../application/wallets/wallet.use-cases';
@@ -24,6 +25,7 @@ export class WalletsController {
     private readonly list: ListWalletsUseCase,
     private readonly remove: DeleteWalletUseCase,
     private readonly balance: GetWalletBalanceUseCase,
+    private readonly portfolio: GetWalletPortfolioUseCase,
     private readonly rename: RenameWalletUseCase,
     private readonly exportKey: ExportWalletKeyUseCase,
     private readonly bulkDelete: BulkDeleteWalletsUseCase,
@@ -65,6 +67,15 @@ export class WalletsController {
     @Query('chain') chain: string,
   ) {
     return this.balance.execute(id, user.userId, user.role === Role.Admin, chain);
+  }
+
+  @Get(':id/portfolio')
+  portfolioAction(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('chain') chain: string,
+  ) {
+    return this.portfolio.execute(id, user.userId, user.role === Role.Admin, chain);
   }
 
   @Get(':id/key')

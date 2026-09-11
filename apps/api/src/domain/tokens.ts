@@ -23,6 +23,9 @@ export const TOKENS = {
   EligibilityApi: 'EligibilityApiPort',
   RpcEndpointRepository: 'RpcEndpointRepository',
   TransferJobRepository: 'TransferJobRepository',
+  SocialAccountRepository: 'SocialAccountRepository',
+  SocialRunRepository: 'SocialRunRepository',
+  SocialExecutor: 'SocialExecutorPort',
 } as const;
 
 export type TokenType = (typeof TOKENS)[keyof typeof TOKENS];

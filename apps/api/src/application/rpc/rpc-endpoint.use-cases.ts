@@ -19,7 +19,7 @@ export class CreateRpcEndpointUseCase {
     input: { chainKey: string; label?: string; url: string; provider?: string; tier?: string },
   ): Promise<RpcEndpointView> {
     const url = input.url.trim().replace(/\/+$/, '');
-    if (!/^https?:\/\//.test(url)) throw new ValidationError('RPC URL must start with http(s)://');
+    if (!/^(https?|wss?):\/\//.test(url)) throw new ValidationError('RPC URL must start with http(s):// or ws(s)://');
     try {
       await assertSafePublicUrl(url);
     } catch (err) {
@@ -67,6 +67,7 @@ export class DeleteRpcEndpointUseCase {
     const endpoint = await this.endpoints.findById(id);
     if (!endpoint || endpoint.userId !== userId) throw new NotFoundError('RPC endpoint');
     await this.endpoints.delete(id);
+    return { success: true };
   }
 }
 

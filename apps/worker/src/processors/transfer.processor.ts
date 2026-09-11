@@ -130,6 +130,144 @@ async function runFundTransfer(jobId: string): Promise<void> {
   }
 }
 
+/** Disperse: variable native amounts from one wallet to many addresses. */
+async function runDisperse(jobId: string): Promise<void> {
+  const job = await prisma.transferJob.findUniqueOrThrow({ where: { id: jobId } });
+  const chainRow = await prisma.chain.findUnique({ where: { key: job.chainKey } });
+  const profile = getChainProfile(job.chainKey);
+  const engine = await buildEngine(
+    job.chainKey,
+    chainRow?.publicRpcs ?? profile?.rpc.public ?? [],
+  );
+
+  try {
+    const fromRow = await prisma.wallet.findUniqueOrThrow({ where: { id: job.fromWalletId! } });
+    const entries = (job.results as unknown as { address: string; amountEth: string }[]) ?? [];
+    if (entries.length === 0) throw new Error('No disperse entries');
+
+    const signer = new Wallet(decryptPrivateKey(fromRow.encryptedKey), engine.provider);
+    const fee = await engine.provider.getFeeData();
+    const results: ResultRow[] = [];
+    let nonce = await engine.provider.getTransactionCount(signer.address, 'pending');
+
+    for (const entry of entries) {
+      try {
+        const amount = parseEther(entry.amountEth);
+        const tx = await signer.sendTransaction({
+          to: entry.address,
+          value: amount,
+          nonce: nonce++,
+          gasLimit: 25_000,
+          ...(fee.maxFeePerGas ? { maxFeePerGas: fee.maxFeePerGas } : {}),
+          ...(fee.maxPriorityFeePerGas ? { maxPriorityFeePerGas: fee.maxPriorityFeePerGas } : {}),
+        });
+        const receipt = await tx.wait();
+        results.push({
+          address: entry.address,
+          txHash: receipt?.hash ?? tx.hash,
+          status: receipt?.status === 1 ? 'success' : 'failed',
+          detail: receipt?.status === 1 ? undefined : 'reverted',
+        });
+      } catch (err) {
+        results.push({
+          address: entry.address,
+          txHash: null,
+          status: 'failed',
+          detail: sanitizeError(err),
+        });
+      }
+    }
+
+    const failed = results.filter((r) => r.status === 'failed').length;
+    await prisma.transferJob.update({
+      where: { id: jobId },
+      data: {
+        status: failed === results.length ? 'failed' : 'completed',
+        results: results as object[],
+        completedAt: new Date(),
+        error: failed > 0 ? `${failed}/${results.length} transfers failed` : null,
+      },
+    });
+  } finally {
+    await engine.destroy();
+  }
+}
+
+/** Consolidate: drain many wallets (native or ERC-20) into one destination. */
+async function runConsolidate(jobId: string): Promise<void> {
+  const job = await prisma.transferJob.findUniqueOrThrow({ where: { id: jobId } });
+  const chainRow = await prisma.chain.findUnique({ where: { key: job.chainKey } });
+  const profile = getChainProfile(job.chainKey);
+  const engine = await buildEngine(
+    job.chainKey,
+    chainRow?.publicRpcs ?? profile?.rpc.public ?? [],
+  );
+
+  try {
+    const sourceRows = await prisma.wallet.findMany({ where: { id: { in: job.toWalletIds } } });
+    const recipient = job.recipientAddress!;
+    const isErc20 = Boolean(job.tokenContract);
+
+    const ERC20_ABI = ['function transfer(address to, uint256 amount) returns (bool)'];
+    const results: ResultRow[] = [];
+
+    for (const source of sourceRows) {
+      try {
+        const signer = new Wallet(decryptPrivateKey(source.encryptedKey), engine.provider);
+        let txHash: string | null = null;
+        if (isErc20) {
+          const token = new Contract(job.tokenContract!, ERC20_ABI, signer);
+          const balance: bigint = await token.balanceOf(source.address);
+          if (balance <= 0n) {
+            results.push({ address: source.address, txHash: null, status: 'success', detail: 'no balance' });
+            continue;
+          }
+          // Leave a small buffer for gas if the token == gas token is not required
+          const tx = await token.transfer(recipient, balance);
+          const receipt = await tx.wait();
+          txHash = receipt?.hash ?? tx.hash;
+        } else {
+          // Native: send balance minus a gas buffer
+          const balance = await engine.provider.getBalance(source.address);
+          const fee = await engine.provider.getFeeData();
+          const gasLimit = 21_000n;
+          const maxFee = (fee.maxFeePerGas ?? 0n) * gasLimit;
+          const toSend = balance - maxFee;
+          if (toSend <= 0n) {
+            results.push({ address: source.address, txHash: null, status: 'success', detail: 'balance too low to consolidate' });
+            continue;
+          }
+          const tx = await signer.sendTransaction({
+            to: recipient,
+            value: toSend,
+            gasLimit: 21_000,
+            ...(fee.maxFeePerGas ? { maxFeePerGas: fee.maxFeePerGas } : {}),
+            ...(fee.maxPriorityFeePerGas ? { maxPriorityFeePerGas: fee.maxPriorityFeePerGas } : {}),
+          });
+          const receipt = await tx.wait();
+          txHash = receipt?.hash ?? tx.hash;
+        }
+        results.push({ address: source.address, txHash, status: 'success' });
+      } catch (err) {
+        results.push({ address: source.address, txHash: null, status: 'failed', detail: sanitizeError(err) });
+      }
+    }
+
+    const failed = results.filter((r) => r.status === 'failed').length;
+    await prisma.transferJob.update({
+      where: { id: jobId },
+      data: {
+        status: failed === results.length ? 'failed' : 'completed',
+        results: results as object[],
+        completedAt: new Date(),
+        error: failed > 0 ? `${failed}/${results.length} transfers failed` : null,
+      },
+    });
+  } finally {
+    await engine.destroy();
+  }
+}
+
 /**
  * Finds NFTs currently owned by a wallet by scanning Transfer logs and
  * confirming ownership with ownerOf, then moves each to the recipient.
@@ -268,6 +406,10 @@ export function startTransferWorker(): Worker<TransferJobData> {
       try {
         if (record.kind === 'fund') {
           await runFundTransfer(job.data.jobId);
+        } else if (record.kind === 'disperse') {
+          await runDisperse(job.data.jobId);
+        } else if (record.kind === 'consolidate') {
+          await runConsolidate(job.data.jobId);
         } else {
           await runTransferNft(job.data.jobId);
         }

@@ -171,6 +171,7 @@ export class DeleteChainUseCase {
       targetId: chain.key,
       metadata: {},
     });
+    return { success: true };
   }
 }
 
@@ -196,5 +197,6 @@ export class DeleteOwnChainUseCase {
       targetId: chain.key,
       metadata: {},
     });
+    return { success: true };
   }
 }

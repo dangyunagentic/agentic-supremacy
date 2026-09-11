@@ -35,6 +35,8 @@ model User {
   transferJobs  TransferJob[]
   refreshTokens RefreshToken[]
   chains        Chain[]
+  socialAccounts SocialAccount[]
+  socialRuns     SocialRun[]
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -270,13 +272,14 @@ model TransferJob {
   id               String    @id @default(uuid())
   userId           String
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  kind             String // fund | transfer_nft
+  kind             String // fund | transfer_nft | disperse | consolidate
   chainKey         String
-  fromWalletId     String? // fund: source wallet
-  toWalletIds      String[] // fund: destinations; transfer: source wallets
-  recipientAddress String? // transfer: destination
+  fromWalletId     String? // fund/disperse: source wallet; consolidate: null (multiple sources in toWalletIds)
+  toWalletIds      String[] // fund: destinations; transfer: source wallets; consolidate: source wallets; disperse: unused
+  recipientAddress String? // transfer/consolidate: destination
   amountEth        Decimal?  @db.Decimal(38, 18)
-  tokenContract    String? // transfer: collection address
+  tokenContract    String? // transfer: collection address; consolidate(erc20): token address
+  tokenSymbol      String? // consolidate(erc20): display symbol
   fromBlock        Int?
   status           String    @default("queued")
   results          Json      @default("[]")
@@ -286,4 +289,45 @@ model TransferJob {
   completedAt      DateTime?
 
   @@index([userId])
+}
+
+// Connected social accounts (Gmail, X, Discord) with encrypted credentials.
+model SocialAccount {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform     String   // gmail | x | discord
+  username     String
+  email        String?
+  displayName  String?
+  encryptedCredentials String // AES-256-GCM envelope (cookie JSON / oauth token / token)
+  proxy             String? // per-account proxy: http://user:pass@host:port or socks5://...
+  status       String   @default("disconnected") // connected | error | disconnected
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  runs         SocialRun[]
+
+  @@index([userId])
+  @@index([platform])
+}
+
+// Off-chain automation runs (X actions, form/wallet submissions, captcha solve).
+model SocialRun {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId   String?
+  account     SocialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  action      String   // x_follow | x_unfollow | x_reply | x_repost | form_submit | wallet_submit | captcha_solve
+  proxy       String? // per-run proxy override (overrides account proxy)
+  status      String   @default("queued") // queued | running | completed | failed
+  input       Json
+  result      Json?
+  error       String?
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  @@index([userId])
+  @@index([status])
 }

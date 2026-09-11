@@ -18,6 +18,19 @@ export class ApiError extends Error {
   }
 }
 
+/** Safely parses a response body as JSON; empty body resolves to `undefined`. */
+async function readJsonSafe(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text || text.trim().length === 0) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Non-JSON (e.g. plain-text error, HTML from a proxy) — return the raw text
+    // so callers can surface it instead of crashing on `.json()`.
+    return { raw: text };
+  }
+}
+
 async function request<T>(
   path: string,
   init: RequestInit & { auth?: boolean } = {},
@@ -43,18 +56,25 @@ async function request<T>(
   if (!res.ok) {
     let code = 'HTTP_ERROR';
     let message = `Request failed (${res.status})`;
-    try {
-      const body = (await res.json()) as { error?: { code?: string; message?: string } };
-      code = body.error?.code ?? code;
-      message = body.error?.message ?? message;
-    } catch {
-      /* keep defaults */
+    const body = await readJsonSafe(res);
+    if (body && typeof body === 'object' && 'error' in (body as Record<string, unknown>)) {
+      const err = (body as { error?: { code?: string; message?: string } }).error;
+      code = err?.code ?? code;
+      message = err?.message ?? message;
+    } else if (body && typeof body === 'object' && 'raw' in (body as Record<string, unknown>)) {
+      message = String((body as { raw: string }).raw).slice(0, 300) || message;
     }
     throw new ApiError(res.status, code, message);
   }
 
   if (res.status === 204) return undefined as T;
-  return (await res.json()) as T;
+  const data = await readJsonSafe(res);
+  if (data === undefined) return undefined as T;
+  // If the body was non-JSON, surface it as raw text rather than an object.
+  if (data && typeof data === 'object' && 'raw' in (data as Record<string, unknown>)) {
+    return (data as { raw: string }).raw as unknown as T;
+  }
+  return data as T;
 }
 
 let refreshing: Promise<boolean> | null = null;
@@ -71,9 +91,12 @@ async function tryRefresh(): Promise<boolean> {
         body: JSON.stringify({ refreshToken }),
       });
       if (!res.ok) return false;
-      const data = (await res.json()) as { accessToken: string; refreshToken: string };
-      updateTokens(data.accessToken, data.refreshToken);
-      return true;
+      const data = (await readJsonSafe(res)) as { accessToken: string; refreshToken: string };
+      if (data && data.accessToken && data.refreshToken) {
+        updateTokens(data.accessToken, data.refreshToken);
+        return true;
+      }
+      return false;
     } catch {
       return false;
     } finally {

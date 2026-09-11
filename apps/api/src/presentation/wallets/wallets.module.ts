@@ -6,6 +6,7 @@ import {
   DeleteWalletUseCase,
   ExportWalletKeyUseCase,
   GetWalletBalanceUseCase,
+  GetWalletPortfolioUseCase,
   ListWalletsUseCase,
   RenameWalletUseCase,
 } from '../../application/wallets/wallet.use-cases';
@@ -16,6 +17,7 @@ import {
     ListWalletsUseCase,
     DeleteWalletUseCase,
     GetWalletBalanceUseCase,
+    GetWalletPortfolioUseCase,
     RenameWalletUseCase,
     ExportWalletKeyUseCase,
     BulkDeleteWalletsUseCase,

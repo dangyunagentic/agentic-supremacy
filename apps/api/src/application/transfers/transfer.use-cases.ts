@@ -20,6 +20,21 @@ export interface CreateFundTransferInput {
   amountEth: string; // decimal ETH per destination wallet
 }
 
+export interface CreateDisperseInput {
+  chainKey: string;
+  fromWalletId: string;
+  entries: { address: string; amountEth: string }[];
+}
+
+export interface CreateConsolidateInput {
+  chainKey: string;
+  mode: 'native' | 'erc20';
+  fromWalletIds: string[]; // wallets to drain
+  toAddress: string; // destination
+  tokenContract?: string; // required for erc20
+  tokenSymbol?: string;
+}
+
 export interface CreateTransferNftInput {
   chainKey: string;
   fromWalletIds: string[]; // wallets holding the NFTs
@@ -125,6 +140,62 @@ export class CreateTransferUseCase {
     await this.scheduler.scheduleTransfer(job.id);
     return toViewInternal(job, null);
   }
+
+  /** Disperse: send variable amounts from one wallet to many addresses. */
+  async executeDisperse(userId: string, input: CreateDisperseInput): Promise<TransferJobView> {
+    await this.assertChain(input.chainKey);
+    const source = await this.assertOwnWallets(userId, [input.fromWalletId]);
+    if (!input.entries || input.entries.length === 0) {
+      throw new ValidationError('Provide at least one disperse entry');
+    }
+    const entries = input.entries.map((e) => {
+      const addr = e.address.trim();
+      if (!isAddressShared(addr)) throw new ValidationError(`Invalid destination address: ${addr}`);
+      let wei: bigint;
+      try {
+        wei = parseEther(e.amountEth.trim());
+      } catch {
+        throw new ValidationError(`Invalid amount: ${e.amountEth}`);
+      }
+      if (wei <= 0n) throw new ValidationError('Amounts must be positive');
+      return { address: addr.toLowerCase(), amountEth: e.amountEth.trim(), txHash: null, status: 'pending' as const };
+    });
+
+    const job = await this.transfers.create({
+      userId,
+      kind: TransferKind.Disperse,
+      chainKey: input.chainKey,
+      fromWalletId: source[0].id,
+      toWalletIds: [],
+      results: entries as any,
+    });
+    await this.scheduler.scheduleTransfer(job.id);
+    return toViewInternal(job, source[0].address);
+  }
+
+  /** Consolidate: drain many wallets (native or ERC-20) into one destination. */
+  async executeConsolidate(userId: string, input: CreateConsolidateInput): Promise<TransferJobView> {
+    await this.assertChain(input.chainKey);
+    if (!isAddressShared(input.toAddress)) throw new ValidationError('Invalid destination address');
+    const sources = await this.assertOwnWallets(userId, input.fromWalletIds);
+    if (input.mode === 'erc20') {
+      if (!input.tokenContract || !isAddressShared(input.tokenContract)) {
+        throw new ValidationError('tokenContract is required for erc20 consolidation');
+      }
+    }
+
+    const job = await this.transfers.create({
+      userId,
+      kind: TransferKind.Consolidate,
+      chainKey: input.chainKey,
+      toWalletIds: sources.map((w) => w.id),
+      recipientAddress: input.toAddress.toLowerCase(),
+      tokenContract: input.mode === 'erc20' ? input.tokenContract!.toLowerCase() : null,
+      tokenSymbol: input.tokenSymbol ?? null,
+    });
+    await this.scheduler.scheduleTransfer(job.id);
+    return toViewInternal(job, null);
+  }
 }
 
 @Injectable()
@@ -170,6 +241,7 @@ function toViewInternal(
     targetCount: job.toWalletIds.length,
     amountEth: job.amountEth,
     tokenContract: job.tokenContract,
+    tokenSymbol: job.tokenSymbol ?? null,
     status: job.status as TransferJobView['status'],
     results: job.results ?? [],
     error: job.error,

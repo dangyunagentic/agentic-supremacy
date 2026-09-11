@@ -107,5 +107,6 @@ export class AdminDeleteUserUseCase {
       targetId: userId,
       metadata: { email: user.email },
     });
+    return { success: true };
   }
 }

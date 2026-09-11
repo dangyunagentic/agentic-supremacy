@@ -331,7 +331,7 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
         ...(rpcEndpoints.data ?? [])
           .filter((ep) => selectedRpcIds.includes(ep.id))
           .map((ep) => ep.url),
-        ...customRpcs.split('\n').map((u) => u.trim()).filter((u) => u.startsWith('http')),
+        ...customRpcs.split('\n').map((u) => u.trim()).filter((u) => /^(https?|wss?):\/\//.test(u)),
       ],
       timingMode: form.timestamp !== '' ? TimingMode.CustomTime : TimingMode.WaitForStage,
       customFireTime: null,
@@ -664,8 +664,8 @@ export function NewTaskDialog({ open, onClose }: { open: boolean; onClose: () =>
             <span className="label">RPC Endpoints</span>
             <span className="text-xs text-text-muted">
               {selectedRpcIds.length} selected
-              {customRpcs.split('\n').filter((u) => u.trim().startsWith('http')).length > 0 &&
-                ` + ${customRpcs.split('\n').filter((u) => u.trim().startsWith('http')).length} custom`}
+              {customRpcs.split('\n').filter((u) => /^(https?|wss?):\/\//.test(u.trim())).length > 0 &&
+                ` + ${customRpcs.split('\n').filter((u) => /^(https?|wss?):\/\//.test(u.trim())).length} custom`}
             </span>
           </div>
           <div className="relative">

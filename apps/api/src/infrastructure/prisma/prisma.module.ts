@@ -14,6 +14,10 @@ import {
   PrismaRpcEndpointRepository,
   PrismaTransferJobRepository,
 } from './transfer.repository';
+import {
+  PrismaSocialAccountRepository,
+  PrismaSocialRunRepository,
+} from './social.repository';
 import { TOKENS } from '../../domain/tokens';
 
 @Global()
@@ -30,6 +34,8 @@ import { TOKENS } from '../../domain/tokens';
     { provide: TOKENS.RpcEndpointRepository, useClass: PrismaRpcEndpointRepository },
     { provide: TOKENS.TransferJobRepository, useClass: PrismaTransferJobRepository },
     { provide: TOKENS.RefreshTokenRepository, useClass: PrismaRefreshTokenRepository },
+    { provide: TOKENS.SocialAccountRepository, useClass: PrismaSocialAccountRepository },
+    { provide: TOKENS.SocialRunRepository, useClass: PrismaSocialRunRepository },
   ],
   exports: [
     PrismaService,
@@ -43,6 +49,8 @@ import { TOKENS } from '../../domain/tokens';
     TOKENS.RpcEndpointRepository,
     TOKENS.TransferJobRepository,
     TOKENS.RefreshTokenRepository,
+    TOKENS.SocialAccountRepository,
+    TOKENS.SocialRunRepository,
   ],
 })
 export class PrismaModule {}

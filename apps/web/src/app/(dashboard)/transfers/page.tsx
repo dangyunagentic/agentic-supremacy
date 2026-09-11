@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Split,
   Equal,
+  GitMerge,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { ChainView, Paginated, TransferJobView, WalletView } from '@mintbot/shared';
@@ -36,7 +37,7 @@ import { cn } from '@/lib/utils';
 
 export default function TransfersPage() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'fund' | 'sweep'>('fund');
+  const [activeTab, setActiveTab] = useState<'fund' | 'sweep' | 'disperse' | 'consolidate'>('fund');
 
   // ── Fund Wallets Form State ──
   const [fundChainKey, setFundChainKey] = useState('base');
@@ -271,6 +272,73 @@ export default function TransfersPage() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  // ── Disperse / Consolidate state ──
+  const [disperse, setDisperse] = useState({
+    chainKey: 'base',
+    fromWalletId: '',
+    entriesText: '',
+  });
+  const [consolidate, setConsolidate] = useState({
+    chainKey: 'base',
+    mode: 'native' as 'native' | 'erc20',
+    toAddress: '',
+    tokenContract: '',
+    tokenSymbol: '',
+    sourceWalletIds: [] as string[],
+  });
+
+  const parsedDisperseEntries = useMemo(() => {
+    return disperse.entriesText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [address, amount] = line.split(/[,\s]+/);
+        return { address: address ?? '', amountEth: amount ?? '' };
+      })
+      .filter((e) => isAddress(e.address) && parseFloat(e.amountEth) > 0);
+  }, [disperse.entriesText]);
+
+  const createDisperse = useMutation({
+    mutationFn: () =>
+      api.post('/transfers/disperse', {
+        chainKey: disperse.chainKey,
+        fromWalletId: disperse.fromWalletId,
+        entries: parsedDisperseEntries,
+      }),
+    onSuccess: () => {
+      toast.success('Disperse job scheduled');
+      void queryClient.invalidateQueries({ queryKey: ['transfers'] });
+      setDisperse({ chainKey: 'base', fromWalletId: '', entriesText: '' });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const createConsolidate = useMutation({
+    mutationFn: () =>
+      api.post('/transfers/consolidate', {
+        chainKey: consolidate.chainKey,
+        mode: consolidate.mode,
+        fromWalletIds: consolidate.sourceWalletIds,
+        toAddress: consolidate.toAddress.trim(),
+        tokenContract: consolidate.mode === 'erc20' ? consolidate.tokenContract.trim() : undefined,
+        tokenSymbol: consolidate.mode === 'erc20' ? consolidate.tokenSymbol.trim() || undefined : undefined,
+      }),
+    onSuccess: () => {
+      toast.success('Consolidate job scheduled');
+      void queryClient.invalidateQueries({ queryKey: ['transfers'] });
+      setConsolidate({
+        chainKey: 'base',
+        mode: 'native',
+        toAddress: '',
+        tokenContract: '',
+        tokenSymbol: '',
+        sourceWalletIds: [],
+      });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const availableDestWallets = (wallets.data ?? []).filter((w) => w.id !== fromWalletId);
   const filteredDestWallets = availableDestWallets.filter(
     (w) =>
@@ -319,6 +387,24 @@ export default function TransfersPage() {
               >
                 <ArrowRightLeft className="size-3.5" />
                 Sweep NFTs
+              </Button>
+              <Button
+                size="sm"
+                variant={activeTab === 'disperse' ? 'primary' : 'secondary'}
+                onClick={() => setActiveTab('disperse')}
+                className="gap-2 font-medium"
+              >
+                <Split className="size-3.5" />
+                Disperse
+              </Button>
+              <Button
+                size="sm"
+                variant={activeTab === 'consolidate' ? 'primary' : 'secondary'}
+                onClick={() => setActiveTab('consolidate')}
+                className="gap-2 font-medium"
+              >
+                <GitMerge className="size-3.5" />
+                Consolidate
               </Button>
             </div>
           </CardHeader>
@@ -604,7 +690,7 @@ export default function TransfersPage() {
                   Send {amountPerWalletEth} ETH to {allDestinationsCount} wallet(s) (Total ~{totalAmountEth} ETH)
                 </Button>
               </>
-            ) : (
+            ) : activeTab === 'sweep' ? (
               /* ── Sweep NFTs Tab ── */
               <>
                 <div className="grid grid-cols-12 gap-3">
@@ -768,6 +854,209 @@ export default function TransfersPage() {
                 >
                   <ArrowRightLeft className="size-4" />
                   Sweep all NFTs from {sweep.sourceWalletIds.length} wallet(s)
+                </Button>
+              </>
+            ) : activeTab === 'disperse' ? (
+              /* ── Disperse Tab ── */
+              <>
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-12 sm:col-span-4">
+                    <Field label="Chain">
+                      <select
+                        value={disperse.chainKey}
+                        onChange={(e) => setDisperse((d) => ({ ...d, chainKey: e.target.value }))}
+                        className="input-base w-full"
+                      >
+                        {(chains.data ?? []).map((c) => (
+                          <option key={c.key} value={c.key}>
+                            {c.name} ({c.key})
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-12 sm:col-span-8">
+                    <Field label="From wallet">
+                      <select
+                        value={disperse.fromWalletId}
+                        onChange={(e) => setDisperse((d) => ({ ...d, fromWalletId: e.target.value }))}
+                        className="input-base w-full font-mono text-xs"
+                      >
+                        <option value="">Select source wallet...</option>
+                        {(wallets.data ?? []).map((w, idx) => (
+                          <option key={w.id} value={w.id}>
+                            {w.label ? `${w.label} - ` : `Wallet #${idx + 1} - `}
+                            {w.address.slice(0, 8)}...{w.address.slice(-6)}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+
+                <Field
+                  label="Entries (address + amount)"
+                  hint="One per line: 0xADDRESS 0.05 — variable amounts per destination"
+                >
+                  <textarea
+                    value={disperse.entriesText}
+                    onChange={(e) => setDisperse((d) => ({ ...d, entriesText: e.target.value }))}
+                    placeholder={'0x1111111111111111111111111111111111111111 0.01\n0x2222222222222222222222222222222222222222 0.05'}
+                    rows={5}
+                    className="input-base w-full mono text-xs p-2 leading-relaxed"
+                  />
+                </Field>
+                {parsedDisperseEntries.length > 0 && (
+                  <p className="text-[11px] text-success font-medium">
+                    ✓ {parsedDisperseEntries.length} valid entr(y/ies) detected
+                  </p>
+                )}
+
+                <Button
+                  onClick={() => createDisperse.mutate()}
+                  loading={createDisperse.isPending}
+                  disabled={!disperse.fromWalletId || parsedDisperseEntries.length === 0}
+                  className="w-full gap-2 font-semibold"
+                  size="md"
+                >
+                  <Split className="size-4" />
+                  Disperse to {parsedDisperseEntries.length} address(es)
+                </Button>
+              </>
+            ) : (
+              /* ── Consolidate Tab ── */
+              <>
+                <div className="grid grid-cols-12 gap-3">
+                  <div className="col-span-12 sm:col-span-4">
+                    <Field label="Chain">
+                      <select
+                        value={consolidate.chainKey}
+                        onChange={(e) => setConsolidate((c) => ({ ...c, chainKey: e.target.value }))}
+                        className="input-base w-full"
+                      >
+                        {(chains.data ?? []).map((c) => (
+                          <option key={c.key} value={c.key}>
+                            {c.name} ({c.key})
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-12 sm:col-span-4">
+                    <Field label="Mode">
+                      <select
+                        value={consolidate.mode}
+                        onChange={(e) => setConsolidate((c) => ({ ...c, mode: e.target.value as 'native' | 'erc20' }))}
+                        className="input-base w-full"
+                      >
+                        <option value="native">Native (ETH)</option>
+                        <option value="erc20">ERC-20 token</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-12 sm:col-span-4">
+                    <Field label="Destination address">
+                      <Input
+                        value={consolidate.toAddress}
+                        onChange={(e) => setConsolidate((c) => ({ ...c, toAddress: e.target.value }))}
+                        placeholder="0x..."
+                        className="mono text-xs"
+                      />
+                    </Field>
+                  </div>
+                </div>
+
+                {consolidate.mode === 'erc20' && (
+                  <div className="grid grid-cols-12 gap-3">
+                    <div className="col-span-12 sm:col-span-7">
+                      <Field label="Token contract">
+                        <Input
+                          value={consolidate.tokenContract}
+                          onChange={(e) => setConsolidate((c) => ({ ...c, tokenContract: e.target.value }))}
+                          placeholder="0x..."
+                          className="mono text-xs"
+                        />
+                      </Field>
+                    </div>
+                    <div className="col-span-12 sm:col-span-5">
+                      <Field label="Token symbol (optional)">
+                        <Input
+                          value={consolidate.tokenSymbol}
+                          onChange={(e) => setConsolidate((c) => ({ ...c, tokenSymbol: e.target.value }))}
+                          placeholder="USDC"
+                          className="text-xs"
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="label">Source wallets to drain</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const all = wallets.data ?? [];
+                        setConsolidate((c) => ({
+                          ...c,
+                          sourceWalletIds: c.sourceWalletIds.length === all.length ? [] : all.map((w) => w.id),
+                        }));
+                      }}
+                      className="text-[11px] font-semibold text-accent hover:underline"
+                    >
+                      {consolidate.sourceWalletIds.length === (wallets.data?.length ?? 0)
+                        ? 'Deselect all'
+                        : 'Select all'}
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto rounded-[8px] border border-border p-1 text-xs">
+                    {(wallets.data ?? []).map((w, idx) => {
+                      const isChecked = consolidate.sourceWalletIds.includes(w.id);
+                      return (
+                        <label
+                          key={w.id}
+                          className={cn(
+                            'flex items-center gap-2.5 rounded px-2.5 py-1.5 cursor-pointer hover:bg-surface-2 transition-colors',
+                            isChecked && 'bg-accent/10',
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() =>
+                              setConsolidate((c) => ({
+                                ...c,
+                                sourceWalletIds: isChecked
+                                  ? c.sourceWalletIds.filter((id) => id !== w.id)
+                                  : [...c.sourceWalletIds, w.id],
+                              }))
+                            }
+                            className="rounded border-border"
+                          />
+                          <span className="font-medium text-text-primary">{w.label || `Wallet #${idx + 1}`}</span>
+                          <span className="mono text-[11px] text-text-muted ml-auto">
+                            {w.address.slice(0, 6)}...{w.address.slice(-4)}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => createConsolidate.mutate()}
+                  loading={createConsolidate.isPending}
+                  disabled={
+                    consolidate.sourceWalletIds.length === 0 ||
+                    !isAddress(consolidate.toAddress) ||
+                    (consolidate.mode === 'erc20' && !isAddress(consolidate.tokenContract))
+                  }
+                  className="w-full gap-2 font-semibold"
+                  size="md"
+                >
+                  <GitMerge className="size-4" />
+                  Consolidate {consolidate.sourceWalletIds.length} wallet(s)
                 </Button>
               </>
             )}

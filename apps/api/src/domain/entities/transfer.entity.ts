@@ -33,6 +33,7 @@ export interface TransferJobEntity {
   recipientAddress: string | null;
   amountEth: string | null;
   tokenContract: string | null;
+  tokenSymbol: string | null;
   fromBlock: number | null;
   status: TransferStatus | string;
   results: TransferResultRow[];

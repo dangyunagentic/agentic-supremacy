@@ -61,7 +61,7 @@ export class GetNftInfoUseCase {
   async execute(rawChainKey: string, rawInput: string): Promise<NftContractInfo> {
     const parsed = parseCollectionInput(rawInput || '');
     const cleanChain = (parsed.chainKey || rawChainKey || 'base').trim().toLowerCase();
-    const cleanAddress = parsed.address || rawInput.trim();
+    const cleanAddress = (parsed.address || rawInput || '').trim();
 
     // 1. If it's a slug or OpenSea collection link, try OpenSea Collections API v2
     if (parsed.slug && !parsed.address) {

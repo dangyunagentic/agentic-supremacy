@@ -230,13 +230,13 @@ export default function RpcPage() {
               ))}
             </Select>
           </Field>
-          <Field label="Endpoint URL" hint="Include your API key, e.g. https://eth-mainnet.g.alchemy.com/v2/<key>">
-            <Input
-              value={form.url}
-              onChange={(e) => setForm({ ...form, url: e.target.value })}
-              placeholder="https://..."
-              className="mono"
-            />
+          <Field label="Endpoint URL" hint="Include your API key, e.g. https://eth-mainnet.g.alchemy.com/v2/<key> — or a wss:// URL">
+          <Input
+            value={form.url}
+            onChange={(e) => setForm({ ...form, url: e.target.value })}
+            placeholder="https://... or wss://..."
+            className="mono"
+          />
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Tier">
@@ -256,7 +256,7 @@ export default function RpcPage() {
           <Button
             onClick={() => create.mutate(form)}
             loading={create.isPending}
-            disabled={!form.chainKey || !form.url.startsWith('http')}
+            disabled={!form.chainKey || !/^(https?|wss?):\/\//.test(form.url)}
           >
             Save endpoint
           </Button>

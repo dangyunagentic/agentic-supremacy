@@ -216,7 +216,7 @@ export class CreateTaskUseCase {
 export function dedupeUrls(custom: string[], fallback: string[]): string[] {
   const urls = custom
     .map((u) => u.trim())
-    .filter((u) => /^https?:\/\//.test(u))
+    .filter((u) => /^(https?|wss?):\/\//.test(u))
     .map((u) => u.replace(/\/+$/, ''));
   return urls.length > 0 ? [...new Set(urls)] : fallback;
 }

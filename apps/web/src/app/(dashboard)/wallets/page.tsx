@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { KeyRound, Pencil, Plus, RefreshCw, Trash2, Download } from 'lucide-react';
+import { KeyRound, Pencil, Plus, RefreshCw, Trash2, Download, PieChart } from 'lucide-react';
 import type { ChainView, WalletView } from '@mintbot/shared';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/layout/page-header';
@@ -28,6 +28,20 @@ export default function WalletsPage() {
   const [renameLabel, setRenameLabel] = useState('');
   const [exportData, setExportData] = useState<{ address: string; privateKey: string } | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [portfolioTarget, setPortfolioTarget] = useState<WalletView | null>(null);
+  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
+
+  type PortfolioData = {
+    id: string;
+    address: string;
+    label: string | null;
+    chainId: number;
+    chainKey: string;
+    nativeSymbol: string;
+    nativeBalanceWei: string;
+    nativeBalance: string;
+    tokens: { symbol: string; address: string; decimals: number; balanceWei: string; balance: string }[];
+  };
 
   const wallets = useQuery({
     queryKey: ['wallets'],
@@ -112,6 +126,18 @@ export default function WalletsPage() {
         `/wallets/${wallet.id}/balance?chain=${chains.data?.[0]?.key ?? 'ethereum'}`,
       ),
     onSuccess: (data) => toast.info(`Balance: ${data.balance} ETH`),
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const portfolio = useMutation({
+    mutationFn: (wallet: WalletView) =>
+      api.get<PortfolioData>(
+        `/wallets/${wallet.id}/portfolio?chain=${chains.data?.[0]?.key ?? 'ethereum'}`,
+      ),
+    onSuccess: (data) => {
+      setPortfolioData(data);
+      setPortfolioTarget((prev) => prev ?? null);
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
@@ -227,6 +253,19 @@ export default function WalletsPage() {
                         onClick={() => checkBalance.mutate(wallet)}
                       >
                         <RefreshCw className="size-3.5" aria-hidden />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        aria-label="View portfolio"
+                        loading={portfolio.isPending && portfolio.variables?.id === wallet.id}
+                        onClick={() => {
+                          setPortfolioTarget(wallet);
+                          setPortfolioData(null);
+                          portfolio.mutate(wallet);
+                        }}
+                      >
+                        <PieChart className="size-3.5" aria-hidden />
                       </Button>
                       <Button
                         size="sm"
@@ -371,6 +410,41 @@ export default function WalletsPage() {
           >
             Save label
           </Button>
+        </div>
+      </Dialog>
+      <Dialog open={portfolioTarget !== null} onClose={() => setPortfolioTarget(null)} title="Portfolio">
+        <div className="flex flex-col gap-4">
+          {portfolioTarget && (
+            <p className="mono text-xs text-text-secondary break-all">{portfolioTarget.address}</p>
+          )}
+          {portfolio.isPending && <TableSkeleton rows={4} />}
+          {portfolioData && (
+            <>
+              <div className="rounded-[8px] border border-border bg-surface px-4 py-3">
+                <p className="label">Native balance</p>
+                <p className="mono mt-1 text-lg font-semibold text-text-primary">
+                  {portfolioData.nativeBalance} {portfolioData.nativeSymbol}
+                </p>
+                <p className="text-[11px] text-text-muted">Chain: {portfolioData.chainKey}</p>
+              </div>
+              <div>
+                <p className="label mb-2">Tracked tokens</p>
+                <div className="flex flex-col gap-1.5">
+                  {portfolioData.tokens.map((t) => (
+                    <div
+                      key={t.symbol}
+                      className="flex items-center justify-between rounded-[8px] border border-border px-3 py-2"
+                    >
+                      <span className="text-sm font-semibold text-text-primary">{t.symbol}</span>
+                      <span className="mono text-sm text-text-secondary">
+                        {Number(t.balance).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </Dialog>
     </>

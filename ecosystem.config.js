@@ -1,0 +1,52 @@
+module.exports = {
+  apps: [
+    {
+      name: 'mintbot-api',
+      cwd: '/root/agentic-supremacy/apps/api',
+      script: 'dist/src/main.js',
+      env: {
+        NODE_ENV: 'production',
+      },
+      node_args: '--env-file=/root/agentic-supremacy/.env',
+      instances: 1,
+      autorestart: true,
+      max_memory_restart: '350M',
+      out_file: '/root/.hermes/logs/mintbot-api.log',
+      error_file: '/root/.hermes/logs/mintbot-api-err.log',
+      merge_logs: true,
+      time: true,
+    },
+    {
+      name: 'mintbot-worker',
+      cwd: '/root/agentic-supremacy/apps/worker',
+      script: 'dist/main.js',
+      env: {
+        NODE_ENV: 'production',
+      },
+      node_args: '--env-file=/root/agentic-supremacy/.env',
+      instances: 1,
+      autorestart: true,
+      max_memory_restart: '350M',
+      out_file: '/root/.hermes/logs/mintbot-worker.log',
+      error_file: '/root/.hermes/logs/mintbot-worker-err.log',
+      merge_logs: true,
+      time: true,
+    },
+    {
+      name: 'mintbot-web',
+      cwd: '/root/agentic-supremacy/apps/web',
+      script: 'node_modules/next/dist/bin/next',
+      args: 'start -p 3000',
+      env: {
+        NODE_ENV: 'production',
+      },
+      instances: 1,
+      autorestart: true,
+      max_memory_restart: '350M',
+      out_file: '/root/.hermes/logs/mintbot-web.log',
+      error_file: '/root/.hermes/logs/mintbot-web-err.log',
+      merge_logs: true,
+      time: true,
+    },
+  ],
+};

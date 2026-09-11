@@ -5,6 +5,7 @@
 // requests after they have seen traffic from the connection.
 
 import { formatMs } from './format';
+import { jsonRpcRequest } from '@mintbot/shared';
 
 /** Warm connections by sending a harmless request to each endpoint. */
 export async function warmConnections(endpoints: string[]): Promise<number> {
@@ -17,13 +18,18 @@ export async function warmConnections(endpoints: string[]): Promise<number> {
   });
 
   await Promise.allSettled(
-    endpoints.map((url) =>
-      fetch(url, {
+    endpoints.map((url) => {
+      // Warm ws(s) endpoints by opening+pinging; warm http(s) by POSTing a
+      // deliberately-invalid sendRawTransaction (only the handshake matters).
+      if (/^wss?:\/\//i.test(url)) {
+        return jsonRpcRequest(url, 'eth_blockNumber', []).catch(() => undefined);
+      }
+      return fetch(url, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body,
-      }).catch(() => undefined),
-    ),
+      }).catch(() => undefined);
+    }),
   );
 
   return Date.now() - started;

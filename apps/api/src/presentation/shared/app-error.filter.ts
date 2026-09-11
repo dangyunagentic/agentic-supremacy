@@ -1,10 +1,12 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import { AppError } from '../../application/common/app-error';
 
 /** Maps domain/application errors onto the API error envelope. */
 @Catch()
 export class AppErrorFilter implements ExceptionFilter {
+  private readonly logger = new Logger(AppErrorFilter.name);
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -36,6 +38,12 @@ export class AppErrorFilter implements ExceptionFilter {
     // Never leak internal exception details (paths, stack fragments, SQL) to
     // the client — a stack trace is an attacker's roadmap. Log server-side only.
     const message = exception instanceof Error ? exception.message : 'Internal error';
+    const stack = exception instanceof Error ? exception.stack : undefined;
+    const request = ctx.getRequest<{ method?: string; url?: string }>();
+    this.logger.error(
+      `Unhandled ${request?.method ?? '?'} ${request?.url ?? '?'} — ${message}`,
+      stack,
+    );
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
     });

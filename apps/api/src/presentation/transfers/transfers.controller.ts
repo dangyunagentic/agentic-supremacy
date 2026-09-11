@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { IsArray, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../shared/jwt.strategy';
 import { CurrentUser } from '../shared/current-user.decorator';
@@ -10,6 +10,7 @@ import {
   CreateTransferUseCase,
   ListTransfersUseCase,
 } from '../../application/transfers/transfer.use-cases';
+import type { CreateDisperseInput, CreateConsolidateInput } from '../../application/transfers/transfer.use-cases';
 import { GetNftInfoUseCase } from '../../application/transfers/get-nft-info.use-case';
 
 export class CreateFundTransferDto {
@@ -49,6 +50,40 @@ export class CreateTransferNftDto {
   fromBlock?: number;
 }
 
+export class CreateDisperseDto {
+  @IsString()
+  chainKey!: string;
+
+  @IsString()
+  fromWalletId!: string;
+
+  @IsArray()
+  entries!: { address: string; amountEth: string }[];
+}
+
+export class CreateConsolidateDto {
+  @IsString()
+  chainKey!: string;
+
+  @IsIn(['native', 'erc20'])
+  mode!: 'native' | 'erc20';
+
+  @IsArray()
+  @IsString({ each: true })
+  fromWalletIds!: string[];
+
+  @IsString()
+  toAddress!: string;
+
+  @IsOptional()
+  @IsString()
+  tokenContract?: string;
+
+  @IsOptional()
+  @IsString()
+  tokenSymbol?: string;
+}
+
 @Controller('transfers')
 @UseGuards(JwtAuthGuard)
 export class TransfersController {
@@ -73,6 +108,18 @@ export class TransfersController {
   @Throttle({ default: { limit: 10, ttl: 3600_000 } })
   transferNftAction(@CurrentUser() user: RequestUser, @Body() dto: CreateTransferNftDto) {
     return this.create.executeTransferNft(user.userId, dto);
+  }
+
+  @Post('disperse')
+  @Throttle({ default: { limit: 10, ttl: 3600_000 } })
+  disperseAction(@CurrentUser() user: RequestUser, @Body() dto: CreateDisperseDto) {
+    return this.create.executeDisperse(user.userId, dto as CreateDisperseInput);
+  }
+
+  @Post('consolidate')
+  @Throttle({ default: { limit: 10, ttl: 3600_000 } })
+  consolidateAction(@CurrentUser() user: RequestUser, @Body() dto: CreateConsolidateDto) {
+    return this.create.executeConsolidate(user.userId, dto as CreateConsolidateInput);
   }
 
   @Get()
