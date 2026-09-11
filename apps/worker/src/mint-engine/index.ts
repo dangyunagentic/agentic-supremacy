@@ -315,17 +315,40 @@ export class MintEngine {
       : null;
   }
 
-  /** Blast each signed tx to every RPC, optionally with a delay between wallets. */
-  async blastAll(signed: SignedTx[], delayMs = 0): Promise<DispatchedTx[]> {
-    const dispatched: DispatchedTx[] = [];
-    for (const s of signed) {
+  /**
+   * Blast each signed tx to every RPC.
+   *
+   * Fire-and-forget dispatch is parallelised across wallets in bounded batches
+   * (default 50 concurrently) so a large wallet set blasts as fast as the RPC
+   * layer allows instead of one-wallet-at-a-time. `delayMs` still spaces batches
+   * apart (and, when > 0, spaces each wallet) for providers that rate-limit a
+   * sudden connection storm.
+   */
+  async blastAll(signed: SignedTx[], delayMs = 0, batchSize = 50): Promise<DispatchedTx[]> {
+    const dispatched: DispatchedTx[] = new Array(signed.length);
+
+    const blastOne = async (s: SignedTx, index: number): Promise<void> => {
       const { txHash, responsePromise } = blastToAll(s.rawTx, this.chain.rpcUrls);
       void responsePromise;
-      dispatched.push({ ...s, txHash, results: [] });
-      if (delayMs > 0 && s !== signed[signed.length - 1]) {
+      dispatched[index] = { ...s, txHash, results: [] };
+    };
+
+    const chunked: SignedTx[][] = [];
+    for (let i = 0; i < signed.length; i += batchSize) {
+      chunked.push(signed.slice(i, i + batchSize));
+    }
+
+    // Track global offset so each wallet lands at the correct result index.
+    let offset = 0;
+    for (const chunk of chunked) {
+      // Fire every wallet in this batch concurrently.
+      await Promise.all(chunk.map((s, i) => blastOne(s, offset + i)));
+      offset += chunk.length;
+      if (delayMs > 0 && chunk !== chunked[chunked.length - 1]) {
         await new Promise((r) => setTimeout(r, delayMs));
       }
     }
+
     return dispatched;
   }
 
