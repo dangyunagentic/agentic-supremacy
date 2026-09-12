@@ -19,12 +19,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
       {children}
       <Toaster
         theme="dark"
-        position="bottom-right"
+        position="top-right"
+        closeButton
+        richColors
+        offset={16}
+        duration={3500}
         toastOptions={{
           style: {
-            background: '#141414',
+            background: 'rgba(20, 20, 20, 0.95)',
+            backdropFilter: 'blur(8px)',
             border: '1px solid #262626',
             color: '#fafafa',
+            fontSize: '13px',
+            boxShadow: '0 8px 30px rgba(0, 0, 0, 0.5)',
           },
         }}
       />
