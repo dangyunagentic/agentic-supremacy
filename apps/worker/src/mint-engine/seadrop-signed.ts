@@ -14,16 +14,57 @@ export interface SignedMintPlan {
   value: bigint;
 }
 
+export type SignedProgressCallback = (
+  completed: number,
+  total: number,
+  eligible: number,
+) => Promise<void> | void;
+
 export async function buildSignedPlans(
   client: OpenSeaApiClient,
   slug: string,
   chainKey: string,
   walletAddresses: string[],
   _provider: Provider,
+  onProgress?: SignedProgressCallback,
+  lanes?: number,
 ): Promise<SignedMintPlan[]> {
-  const actions = await Promise.all(
-    walletAddresses.map((address) => client.fetchWalletMintAction(slug, chainKey, address)),
-  );
+  const total = walletAddresses.length;
+  if (total === 0) return [];
+
+  const configuredLanes = lanes ?? (parseInt(process.env.OPENSEA_LANES || '', 10) || 16);
+  const effectiveLanes = Math.max(1, Math.min(configuredLanes, total));
+
+  const actions: Array<WalletMintAction | null> = new Array(total);
+  let cursor = 0;
+  let completed = 0;
+  let eligibleCount = 0;
+
+  async function worker() {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= total) break;
+      const address = walletAddresses[idx];
+      try {
+        const action = await client.fetchWalletMintAction(slug, chainKey, address);
+        actions[idx] = action;
+        if (action) eligibleCount++;
+      } catch {
+        actions[idx] = null;
+      }
+      completed++;
+      if (onProgress) {
+        try {
+          await onProgress(completed, total, eligibleCount);
+        } catch {
+          // ignore progress handler failures
+        }
+      }
+    }
+  }
+
+  const workers = Array.from({ length: effectiveLanes }, () => worker());
+  await Promise.all(workers);
 
   const plans: SignedMintPlan[] = [];
   const ineligible: string[] = [];

@@ -164,12 +164,19 @@ export class CheckEligibilityUseCase {
       try {
         const stage = await this.eligibilityApi.fetchStage(targetSlug, targetChain);
         if (stage.kind !== 'none' && stage.startTime) {
-          const results = await Promise.all(
-            owned.map(async (w) => {
+          const lanes = 16;
+          const results: Array<{ address: string; eligible: boolean; reason: string }> = new Array(owned.length);
+          let cursor = 0;
+          const workers = Array.from({ length: Math.min(lanes, owned.length) }, async () => {
+            while (true) {
+              const idx = cursor++;
+              if (idx >= owned.length) break;
+              const w = owned[idx];
               const action = await this.eligibilityApi.fetchWalletAction(targetSlug!, targetChain, w.address);
-              return { address: w.address, eligible: action.eligible, reason: action.reason };
-            }),
-          );
+              results[idx] = { address: w.address, eligible: action.eligible, reason: action.reason };
+            }
+          });
+          await Promise.all(workers);
 
           return {
             collection: targetAddress || targetSlug,

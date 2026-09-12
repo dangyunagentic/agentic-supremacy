@@ -4,7 +4,7 @@
 import { JsonRpcProvider, Wallet, keccak256, getBytes, toUtf8Bytes, type Provider } from 'ethers';
 import { gweiToWei, PRE_SIGN_LEAD_MS } from '@mintbot/shared';
 import { buildLocalMintPlan, fetchPublicDrop, type LocalMintPlan, type PublicDrop } from './seadrop-public';
-import { buildSignedPlans, type SignedMintPlan } from './seadrop-signed';
+import { buildSignedPlans, type SignedMintPlan, type SignedProgressCallback } from './seadrop-signed';
 import { UniversalLaunchpadEngine, type UniversalMintPlan } from './universal-launchpad';
 import { blastToAll, waitForReceipt, type BlastResult } from './rpc-blast';
 import { warmConnections } from './connection-warmer';
@@ -131,11 +131,16 @@ export class MintEngine {
     return { mode: 'signed', isAddress };
   }
 
+  get openSeaKeyCount(): number {
+    return this.openSea.keyCount;
+  }
+
   async buildPlan(
     mode: MintPlanKind,
     collection: string,
     quantity: number,
     wallets: EngineWallet[],
+    onProgress?: SignedProgressCallback,
   ): Promise<BuiltPlan> {
     if (mode === 'public') {
       try {
@@ -191,6 +196,7 @@ export class MintEngine {
       this.chain.key,
       wallets.map((w) => w.address),
       this.provider,
+      onProgress,
     );
     return { kind: 'signed', perWallet: plans };
   }

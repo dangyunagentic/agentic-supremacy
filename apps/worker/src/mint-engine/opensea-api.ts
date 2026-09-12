@@ -51,40 +51,108 @@ interface GraphqlResponse {
 }
 
 export class OpenSeaApiClient {
-  constructor(private readonly apiKey: string | null) {}
+  private readonly apiKeys: string[];
+  private keyIndex = 0;
 
-  get configured(): boolean {
-    return Boolean(this.apiKey && this.apiKey.trim().length > 0);
+  constructor(apiKeysInput?: string | string[] | null) {
+    let rawKeys: string[] = [];
+    if (Array.isArray(apiKeysInput)) {
+      rawKeys = apiKeysInput;
+    } else if (typeof apiKeysInput === 'string' && apiKeysInput.trim().length > 0) {
+      rawKeys = apiKeysInput.split(/[\n,;]+/);
+    } else {
+      const envKeys = process.env.OPENSEA_API_KEYS || process.env.OPENSEA_API_KEY;
+      if (envKeys) rawKeys = envKeys.split(/[\n,;]+/);
+    }
+    this.apiKeys = rawKeys.map((k) => k.trim()).filter(Boolean);
   }
 
-  private requireKey(): string {
-    if (!this.configured) {
+  get configured(): boolean {
+    return this.apiKeys.length > 0;
+  }
+
+  get keyCount(): number {
+    return this.apiKeys.length;
+  }
+
+  private getKey(): string {
+    if (this.apiKeys.length === 0) {
       throw new OpenSeaApiError(
         'OpenSea API key not configured; allowlist/FCFS mints are unavailable',
         'OPENSEA_NOT_CONFIGURED',
       );
     }
-    return this.apiKey!;
+    const key = this.apiKeys[this.keyIndex % this.apiKeys.length];
+    this.keyIndex = (this.keyIndex + 1) % this.apiKeys.length;
+    return key;
   }
 
-  private async graphql<T extends GraphqlResponse>(query: string, variables: Record<string, string>): Promise<T> {
-    const res = await fetch(OPENSEA_GRAPHQL_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${this.requireKey()}`,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
+  private async graphql<T extends GraphqlResponse>(
+    query: string,
+    variables: Record<string, string>,
+    maxRetries = 3,
+  ): Promise<T> {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      attempt++;
+      const currentKey = this.getKey();
+      try {
+        const res = await fetch(OPENSEA_GRAPHQL_URL, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${currentKey}`,
+          },
+          body: JSON.stringify({ query, variables }),
+          signal: AbortSignal.timeout(10000),
+        });
 
-    if (!res.ok) {
-      throw new OpenSeaApiError(`OpenSea API responded ${res.status}`);
+        if (res.status === 429) {
+          if (attempt <= maxRetries) {
+            const jitter = Math.floor(Math.random() * 150);
+            const backoffMs = Math.min(3000, Math.floor(300 * Math.pow(2, attempt - 1)) + jitter);
+            await new Promise((r) => setTimeout(r, backoffMs));
+            continue;
+          }
+          throw new OpenSeaApiError(`OpenSea rate limit exceeded (HTTP 429) after ${maxRetries} retries`);
+        }
+
+        if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt <= maxRetries) {
+          const backoffMs = 250 * attempt;
+          await new Promise((r) => setTimeout(r, backoffMs));
+          continue;
+        }
+
+        if (!res.ok) {
+          throw new OpenSeaApiError(`OpenSea API responded ${res.status}`);
+        }
+
+        const json = (await res.json()) as T;
+        if (json.errors?.length) {
+          const errMsg = json.errors.map((e) => e.message).join('; ');
+          if (/rate limit|too many requests|throttl/i.test(errMsg) && attempt <= maxRetries) {
+            const jitter = Math.floor(Math.random() * 150);
+            const backoffMs = Math.min(3000, Math.floor(300 * Math.pow(2, attempt - 1)) + jitter);
+            await new Promise((r) => setTimeout(r, backoffMs));
+            continue;
+          }
+          throw new OpenSeaApiError(errMsg);
+        }
+
+        return json;
+      } catch (err) {
+        if (err instanceof OpenSeaApiError && err.code === 'OPENSEA_NOT_CONFIGURED') {
+          throw err;
+        }
+        if (attempt <= maxRetries && !/not configured/i.test(String(err))) {
+          const backoffMs = 250 * attempt;
+          await new Promise((r) => setTimeout(r, backoffMs));
+          continue;
+        }
+        throw err;
+      }
     }
-    const json = (await res.json()) as T;
-    if (json.errors?.length) {
-      throw new OpenSeaApiError(json.errors.map((e) => e.message).join('; '));
-    }
-    return json;
+    throw new OpenSeaApiError('OpenSea request failed after retries');
   }
 
   /** The active mint stage for a collection (slug-based). */

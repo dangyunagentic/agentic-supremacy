@@ -82,7 +82,28 @@ export async function runMint(taskId: string): Promise<void> {
     if (wallets.length === 0) throw new Error('No spendable wallets found for this task');
 
     const { mode } = await engine.resolveMode(task.mintMode, task.collection);
-    const plan = await engine.buildPlan(mode, task.collection, task.quantity, wallets);
+    if (mode === 'signed') {
+      await taskLog(
+        taskId,
+        'info',
+        `Fetching OpenSea signed actions for ${wallets.length} wallet(s) (${engine.openSeaKeyCount} key(s) active)...`,
+      );
+    }
+    const plan = await engine.buildPlan(
+      mode,
+      task.collection,
+      task.quantity,
+      wallets,
+      async (completed, total, eligible) => {
+        if (completed === total || completed % 25 === 0 || (total <= 25 && completed % 5 === 0)) {
+          await taskLog(
+            taskId,
+            'info',
+            `OpenSea signed fetch: ${completed}/${total} wallets processed (${eligible} eligible)`,
+          ).catch(() => undefined);
+        }
+      },
+    );
 
     // ── Free Mint / Price Guard Protection ──
     // Strictly protects against developer suddenly changing price from Free (0 ETH) to Paid,
