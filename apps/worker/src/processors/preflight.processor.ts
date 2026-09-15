@@ -124,7 +124,10 @@ export async function runPreflight(taskId: string): Promise<void> {
       fireAt = new Date(drop.startTime * 1000);
       await taskLog(taskId, 'info', `Public stage opens at ${fireAt.toISOString()} (Price: ${formatEth(drop.mintPrice)} ETH)`);
     } else {
-      const stage = await openSea.fetchStage(collection, task.chainKey);
+      // Signed stages: match the task mode so an FCFS task targets the FCFS
+      // stage start (not the earlier GTD stage), falling back to next stage.
+      const preferred = mode === MintMode.Fcfs ? ('fcfs' as const) : mode === MintMode.Allowlist ? ('allowlist' as const) : undefined;
+      const stage = await openSea.fetchStage(collection, task.chainKey, preferred);
       if (!stage.startTime) {
         throw new Error(`No active or upcoming stage found on OpenSea for ${collection}`);
       }

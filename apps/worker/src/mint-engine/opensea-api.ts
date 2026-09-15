@@ -181,16 +181,37 @@ export class OpenSeaApiClient {
 
   /**
    * The relevant mint stage for a collection slug: the live stage when the
-   * drop is minting, otherwise the next upcoming stage.
+   * drop is minting, otherwise the next upcoming stage. When `preferred` is
+   * given (fcfs/allowlist), the matching future stage from the full stage
+   * list wins over "next" — an FCFS task must not fire at the GTD start.
    */
-  async fetchStage(slug: string, _chainKey?: string): Promise<MintStageInfo> {
+  async fetchStage(
+    slug: string,
+    _chainKey?: string,
+    preferred?: 'allowlist' | 'fcfs',
+  ): Promise<MintStageInfo> {
     const { status, json } = await this.request(`/api/v2/drops/${encodeURIComponent(slug)}`);
     if (status === 404) return { kind: 'none', startTime: null, endTime: null, name: null };
     if (status !== 200) {
-      const msg = json?.errors?.join('; ') ?? `OpenSea drops API responded ${status}`;
+      const msg = json?.errors?.join?.('; ') ?? `OpenSea drops API responded ${status}`;
       throw new OpenSeaApiError(msg);
     }
-    const drop = json as DropResponse;
+    const drop = json as DropResponse & { stages?: DropStageResponse[] };
+
+    if (preferred && Array.isArray(drop.stages)) {
+      const match = drop.stages.find(
+        (s) => OpenSeaApiClient.stageKind(s) === preferred && !!s.start_time,
+      );
+      if (match) {
+        return {
+          kind: preferred,
+          startTime: match.start_time!,
+          endTime: match.end_time ?? null,
+          name: match.label ?? null,
+        };
+      }
+    }
+
     const stage = drop.is_minting && drop.active_stage ? drop.active_stage : drop.next_stage;
     if (!stage || !stage.start_time) {
       return { kind: 'none', startTime: null, endTime: null, name: null };

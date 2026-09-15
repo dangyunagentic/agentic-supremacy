@@ -82,6 +82,7 @@ export async function runMint(taskId: string): Promise<void> {
     if (wallets.length === 0) throw new Error('No spendable wallets found for this task');
 
     const { mode } = await engine.resolveMode(task.mintMode, task.collection);
+    const plannedFireAt = task.resolvedFireAt ? new Date(task.resolvedFireAt).getTime() : null;
     if (mode === 'signed') {
       await taskLog(
         taskId,
@@ -103,6 +104,9 @@ export async function runMint(taskId: string): Promise<void> {
           ).catch(() => undefined);
         }
       },
+      // Signed actions usually appear only once the stage opens; the mint job
+      // starts at T-10s, so keep re-fetching until fire time + buffer.
+      plannedFireAt !== null ? { retryUntilMs: plannedFireAt + 20_000 } : undefined,
     );
 
     // ── Free Mint / Price Guard Protection ──
