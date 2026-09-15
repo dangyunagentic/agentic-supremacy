@@ -156,7 +156,7 @@ export class MintEngine {
     quantity: number,
     wallets: EngineWallet[],
     onProgress?: SignedProgressCallback,
-    signedOptions?: { retryUntilMs?: number },
+    signedOptions?: { retryUntilMs?: number; retryIntervalMs?: number },
   ): Promise<BuiltPlan> {
     if (mode === 'public') {
       try {
@@ -367,11 +367,12 @@ export class MintEngine {
         void txHash;
       }
       // WSS endpoints fire over the persistent pool: no handshake at T-0.
-      const wsResults = await Promise.all(
-        wsEndpoints.map((u) => this.wsPool.blast(u, s.rawTx, s.txHash)),
-      );
-      const accepted = wsResults.find((r) => r.ok);
-      dispatched[index] = { ...s, txHash: accepted?.txHash ?? s.txHash, results: [] };
+      // Fire-and-forget: the send itself is the blast; the response arrives
+      // in the background and only refines the accepted txHash.
+      for (const u of wsEndpoints) {
+        void this.wsPool.blast(u, s.rawTx, s.txHash).then(() => undefined, () => undefined);
+      }
+      dispatched[index] = { ...s, txHash: s.txHash, results: [] };
     };
 
     const chunked: SignedTx[][] = [];

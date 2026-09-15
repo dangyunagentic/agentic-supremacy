@@ -90,6 +90,24 @@ export async function runMint(taskId: string): Promise<void> {
         `Fetching OpenSea signed actions for ${wallets.length} wallet(s) (${engine.openSeaKeyCount} key(s) active)...`,
       );
     }
+
+    // ── War pipeline: run balance check + RPC warm IN PARALLEL with the
+    // calldata fetch. The calldata fetch blocks until the stage opens; the old
+    // sequential order wasted 1.5s+ after calldata appeared. Everything that
+    // does not depend on calldata is already done when it arrives.
+    const gas = {
+      maxFeeGwei: task.maxFeeGwei,
+      maxPriorityGwei: task.maxPriorityGwei,
+      gasLimit: task.gasLimit,
+    };
+    const balancesPromise = engine
+      .getNativeBalances(wallets.map((w) => w.address))
+      .catch(() => null);
+    const warmPromise = engine.warm().then((ms) => {
+      taskLog(taskId, 'info', `RPC connections warmed in ${ms}ms`).catch(() => undefined);
+      return ms;
+    });
+
     const plan = await engine.buildPlan(
       mode,
       task.collection,
@@ -106,14 +124,25 @@ export async function runMint(taskId: string): Promise<void> {
       },
       // Signed actions usually appear only once the stage opens; the mint job
       // starts at T-10s, so keep re-fetching until fire time + buffer.
-      plannedFireAt !== null ? { retryUntilMs: plannedFireAt + 20_000 } : undefined,
+      plannedFireAt !== null ? { retryUntilMs: plannedFireAt + 20_000, retryIntervalMs: 150 } : undefined,
     );
+
+    // Balance validation (already in flight; value guard re-checked with the
+    // real per-wallet value below).
+    const valuePerWallet = plan.kind === 'public' ? plan.shared!.value : plan.perWallet![0]?.value ?? 0n;
+    const gas2 = {
+      maxFeeGwei: task.maxFeeGwei,
+      maxPriorityGwei: task.maxPriorityGwei,
+      gasLimit: task.gasLimit,
+    };
+    const balancesMap = await balancesPromise;
+    const check = balancesMap
+      ? engine.validateBalances(balancesMap, wallets, gas2, valuePerWallet)
+      : { ok: true, insufficient: [] as Array<{ address: string; have: bigint; need: bigint }> };
 
     // ── Free Mint / Price Guard Protection ──
     // Strictly protects against developer suddenly changing price from Free (0 ETH) to Paid,
     // or exceeding user's configured price limit.
-    const valuePerWallet = plan.kind === 'public' ? plan.shared!.value : plan.perWallet![0]?.value ?? 0n;
-
     if (task.pricePerNft !== null && task.pricePerNft !== undefined) {
       const maxPriceWei = parseEther(String(task.pricePerNft));
       const maxAllowedTotalWei = maxPriceWei * BigInt(task.quantity);
@@ -131,14 +160,7 @@ export async function runMint(taskId: string): Promise<void> {
       }
     }
 
-    // ── Balance validation (upfront reservation rule) ──
-    const balances = await engine.getNativeBalances(wallets.map((w) => w.address));
-    const gas = {
-      maxFeeGwei: task.maxFeeGwei,
-      maxPriorityGwei: task.maxPriorityGwei,
-      gasLimit: task.gasLimit,
-    };
-    const check = engine.validateBalances(balances, wallets, gas, valuePerWallet);
+    // ── Balance validation (balances were fetched in parallel with calldata) ──
     let activeWallets = wallets;
     if (!check.ok) {
       if (task.fundedOnly) {
@@ -159,12 +181,11 @@ export async function runMint(taskId: string): Promise<void> {
     }
     await taskLog(taskId, 'success', `Balances ok for ${activeWallets.length} wallet(s)`);
 
-    // ── Phase 3: pre-sign ──
+    // ── Phase 3: pre-sign (warm already ran in parallel) ──
     await setTaskStatus(taskId, TaskStatus.PreSign);
-    const warmMs = await engine.warm();
-    await taskLog(taskId, 'info', `RPC connections warmed in ${warmMs}ms`);
+    await warmPromise;
 
-    const signedAll = await engine.signAll(activeWallets, plan, gas, chainId, task.nonce);
+    const signedAll = await engine.signAll(activeWallets, plan, gas2, chainId, task.nonce);
     const maxTx = task.maxTx && task.maxTx > 0 ? Math.min(task.maxTx, signedAll.length) : signedAll.length;
     const signed = signedAll.slice(0, maxTx);
     await taskLog(taskId, 'success', `Pre-signed ${signed.length} transaction(s)${maxTx < signedAll.length ? ` (maxTx limit ${maxTx})` : ''}`);
