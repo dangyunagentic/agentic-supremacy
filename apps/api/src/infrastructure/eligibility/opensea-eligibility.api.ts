@@ -4,11 +4,12 @@ import { TOKENS } from '../../domain/tokens';
 import type { KeyEncryptionPort } from '../../domain/ports/ports';
 import type { SystemConfigRepository } from '../../domain/repositories/system.repository';
 
-const OPENSEA_GRAPHQL_URL = 'https://api.opensea.io/api/graphql';
+const OPENSEA_API_BASE = 'https://api.opensea.io';
 
 /**
- * API-side GTD/FCFS eligibility adapter. Mirrors the worker's OpenSea client
- * with multi-key rotation and 429 backoff retry.
+ * API-side GTD/FCFS eligibility adapter backed by the OpenSea Drops v2 REST
+ * API. Mirrors the worker's OpenSea client with multi-key rotation and
+ * 429 backoff retry.
  */
 @Injectable()
 export class OpenSeaEligibilityApi implements EligibilityApiPort {
@@ -57,50 +58,45 @@ export class OpenSeaEligibilityApi implements EligibilityApiPort {
     return true;
   }
 
-  private async graphql<T>(query: string, variables: Record<string, string>, maxRetries = 3): Promise<T> {
+  private async request(
+    path: string,
+    init: { method?: string; body?: unknown } = {},
+    maxRetries = 3,
+  ): Promise<{ status: number; json: any }> {
     let attempt = 0;
-    while (attempt <= maxRetries) {
+    while (true) {
       attempt++;
       const key = await this.nextKey();
       try {
-        const res = await fetch(OPENSEA_GRAPHQL_URL, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-          body: JSON.stringify({ query, variables }),
-          signal: AbortSignal.timeout(10000),
+        const res = await fetch(`${OPENSEA_API_BASE}${path}`, {
+          method: init.method ?? 'GET',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+            'x-api-key': key,
+          },
+          body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+          signal: AbortSignal.timeout(15000),
         });
 
-        if (res.status === 429) {
+        if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
           if (attempt <= maxRetries) {
             const jitter = Math.floor(Math.random() * 150);
             const backoffMs = Math.min(3000, Math.floor(300 * Math.pow(2, attempt - 1)) + jitter);
             await new Promise((r) => setTimeout(r, backoffMs));
             continue;
           }
-          throw new Error(`OpenSea rate limit reached (HTTP 429) after ${maxRetries} retries`);
+          throw new Error(`OpenSea API responded ${res.status} after ${maxRetries} retries`);
         }
 
-        if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt <= maxRetries) {
-          await new Promise((r) => setTimeout(r, 250 * attempt));
-          continue;
+        const text = await res.text();
+        let json: any = null;
+        try {
+          json = text ? JSON.parse(text) : null;
+        } catch {
+          json = null;
         }
-
-        if (!res.ok) throw new Error(`OpenSea API responded ${res.status}`);
-        const json = (await res.json()) as {
-          data?: T;
-          errors?: Array<{ message?: string }>;
-        };
-        if (json.errors?.length) {
-          const errMsg = json.errors.map((e) => e.message).join('; ');
-          if (/rate limit|too many requests|throttl/i.test(errMsg) && attempt <= maxRetries) {
-            const jitter = Math.floor(Math.random() * 150);
-            const backoffMs = Math.min(3000, Math.floor(300 * Math.pow(2, attempt - 1)) + jitter);
-            await new Promise((r) => setTimeout(r, backoffMs));
-            continue;
-          }
-          throw new Error(errMsg);
-        }
-        return json.data as T;
+        return { status: res.status, json };
       } catch (err) {
         if (/not configured/i.test(String(err))) throw err;
         if (attempt <= maxRetries) {
@@ -110,46 +106,51 @@ export class OpenSeaEligibilityApi implements EligibilityApiPort {
         throw err;
       }
     }
-    throw new Error('OpenSea request failed after retries');
   }
 
-  async fetchStage(slug: string, chainKey: string) {
-    const data = await this.graphql<{
-      collection?: {
-        activeStage?: { __typename?: string; name?: string | null; startTime?: string | null; endTime?: string | null };
-      };
-    }>(
-      'query MintStage($slug: String!, $chain: String!) { collection(slug: $slug, chain: $chain) { activeStage { __typename name startTime endTime } } }',
-      { slug, chain: chainKey },
-    );
-    const stage = data.collection?.activeStage;
-    if (!stage) return { kind: 'none' as const, startTime: null, endTime: null, name: null };
-    const raw = `${stage.__typename ?? ''} ${stage.name ?? ''}`.toLowerCase();
-    const kind = raw.includes('fcfs') || raw.includes('first come')
-      ? ('fcfs' as const)
-      : raw.includes('allow') || raw.includes('gtd') || raw.includes('list') || raw.includes('guaranteed')
-        ? ('allowlist' as const)
-        : raw.includes('public')
-          ? ('public' as const)
-          : ('fcfs' as const);
-    return { kind, startTime: stage.startTime ?? null, endTime: stage.endTime ?? null, name: stage.name ?? null };
+  async fetchStage(slug: string, _chainKey?: string) {
+    const { status, json } = await this.request(`/api/v2/drops/${encodeURIComponent(slug)}`);
+    if (status === 404) return { kind: 'none' as const, startTime: null, endTime: null, name: null };
+    if (status !== 200) {
+      const msg = json?.errors?.join?.('; ') ?? `OpenSea drops API responded ${status}`;
+      throw new Error(msg);
+    }
+    const drop = json as {
+      is_minting?: boolean;
+      active_stage?: { stage_type?: string; label?: string | null; start_time?: string | null; end_time?: string | null } | null;
+      next_stage?: { stage_type?: string; label?: string | null; start_time?: string | null; end_time?: string | null } | null;
+    };
+    const stage = drop.is_minting && drop.active_stage ? drop.active_stage : drop.next_stage;
+    if (!stage || !stage.start_time) {
+      return { kind: 'none' as const, startTime: null, endTime: null, name: null };
+    }
+    const raw = `${stage.stage_type ?? ''} ${stage.label ?? ''}`.toLowerCase();
+    const kind = raw.includes('public')
+      ? ('public' as const)
+      : raw.includes('fcfs') || raw.includes('first come')
+        ? ('fcfs' as const)
+        : ('allowlist' as const);
+    return {
+      kind,
+      startTime: stage.start_time,
+      endTime: stage.end_time ?? null,
+      name: stage.label ?? null,
+    };
   }
 
-  async fetchWalletAction(slug: string, chainKey: string, address: string) {
+  async fetchWalletAction(slug: string, _chainKey: string, address: string) {
     try {
-      const data = await this.graphql<{
-        collection?: {
-          activeStage?: {
-            actions?: Array<{ __typename?: string; calldata?: string }>;
-          };
-        };
-      }>(
-        'query WalletMintAction($slug: String!, $chain: String!, $address: String!) { collection(slug: $slug, chain: $chain) { activeStage { actions(address: $address) { __typename calldata } } } }',
-        { slug, chain: chainKey, address },
+      const { status, json } = await this.request(
+        `/api/v2/drops/${encodeURIComponent(slug)}/mint`,
+        { method: 'POST', body: { minter: address, quantity: 1 } },
       );
-      const action = data.collection?.activeStage?.actions?.find((a) => a.calldata);
-      if (!action) return { eligible: false, reason: 'No signed mint action for this wallet' };
-      return { eligible: true, reason: 'Wallet has a signed GTD/FCFS mint action' };
+      if (status === 200 && json?.data && json?.to) {
+        return { eligible: true, reason: 'Wallet has a signed GTD/FCFS mint action' };
+      }
+      const msg = Array.isArray(json?.errors)
+        ? json.errors.join('; ')
+        : `No signed mint action (HTTP ${status})`;
+      return { eligible: false, reason: msg };
     } catch (err) {
       return { eligible: false, reason: `Check failed: ${(err as Error).message}` };
     }

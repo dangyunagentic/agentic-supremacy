@@ -70,6 +70,8 @@ export class MintEngine {
   readonly provider: JsonRpcProvider;
   private readonly openSea: OpenSeaApiClient;
   private readonly universal = new UniversalLaunchpadEngine();
+  /** When auto mode resolves a contract address to an OpenSea drop slug. */
+  private resolvedSlug: string | null = null;
 
   constructor(
     readonly chain: EngineChain,
@@ -123,8 +125,15 @@ export class MintEngine {
     if (isAddress) {
       const drop = await fetchPublicDrop(this.provider, this.chain.seadropAddress, collection);
       if (drop) return { mode: 'public', isAddress };
+      // No public drop on-chain: try to resolve the contract to an OpenSea
+      // drop slug so auto can still take the signed allowlist/FCFS path.
+      const slug = await this.openSea.resolveSlug(collection, this.chain.key).catch(() => null);
+      if (slug) {
+        this.resolvedSlug = slug;
+        return { mode: 'signed', isAddress };
+      }
       throw new Error(
-        'Auto mode: no public drop on-chain and no slug for the allowlist/FCFS path. ' +
+        'Auto mode: no public drop on-chain and no OpenSea drop for this contract. ' +
           'Pass an OpenSea collection slug or set mintMode explicitly.',
       );
     }
@@ -192,11 +201,13 @@ export class MintEngine {
     }
     const plans = await buildSignedPlans(
       this.openSea,
-      collection, // slug
+      this.resolvedSlug ?? collection, // slug
       this.chain.key,
       wallets.map((w) => w.address),
       this.provider,
       onProgress,
+      undefined,
+      quantity,
     );
     return { kind: 'signed', perWallet: plans };
   }

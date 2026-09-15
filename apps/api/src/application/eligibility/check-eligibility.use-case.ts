@@ -163,7 +163,7 @@ export class CheckEligibilityUseCase {
     if (targetSlug) {
       try {
         const stage = await this.eligibilityApi.fetchStage(targetSlug, targetChain);
-        if (stage.kind !== 'none' && stage.startTime) {
+        if (stage.kind !== 'none' && stage.kind !== 'public' && stage.startTime) {
           const lanes = 16;
           const results: Array<{ address: string; eligible: boolean; reason: string }> = new Array(owned.length);
           let cursor = 0;

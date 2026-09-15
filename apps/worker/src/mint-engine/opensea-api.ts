@@ -1,18 +1,23 @@
-// Ported from osnm-z's OpenSea integration.
+// OpenSea Drops v2 REST integration.
 //
-// Allowlist/FCFS stages are signed: the calldata contains an OpenSea
-// signature bound to the minter address, so it must be fetched per wallet,
-// shortly before firing (the reference tool refreshes it at T-2s).
-
-import type { Provider } from 'ethers';
-
-const OPENSEA_GRAPHQL_URL = 'https://api.opensea.io/api/graphql';
+// The legacy GraphQL endpoint (api.opensea.io/api/graphql) is dead (404).
+// Allowlist/GTD/FCFS stages and per-wallet signed mint actions now come from
+// the documented Drops API:
+//   GET  /api/v2/drops/{slug}           -> active_stage / next_stage info
+//   POST /api/v2/drops/{slug}/mint      -> {to, data, value} signed action
+//   GET  /api/v2/chain/{chain}/contract/{address} -> slug resolution
 
 export interface WalletMintAction {
   target: string;
   calldata: string;
   value: string; // wei, decimal string
-  deadline?: string | null;
+}
+
+export interface SignedMintPlan {
+  walletAddress: string;
+  to: string;
+  data: string;
+  value: bigint;
 }
 
 export interface MintStageInfo {
@@ -23,6 +28,12 @@ export interface MintStageInfo {
   name: string | null;
 }
 
+/** Result of a per-wallet mint-action fetch, with a human-readable reason. */
+export interface WalletActionResult {
+  action: WalletMintAction | null;
+  reason: string | null;
+}
+
 export class OpenSeaApiError extends Error {
   constructor(message: string, readonly code = 'OPENSEA_ERROR') {
     super(message);
@@ -30,24 +41,49 @@ export class OpenSeaApiError extends Error {
   }
 }
 
-interface GraphqlResponse {
-  data?: {
-    collection?: {
-      activeStage?: {
-        __typename?: string;
-        startTime?: string | null;
-        endTime?: string | null;
-        actions?: Array<{
-          __typename?: string;
-          target?: string;
-          calldata?: string;
-          value?: string;
-          deadline?: string | null;
-        }>;
-      };
-    };
-  };
-  errors?: Array<{ message?: string }>;
+const OPENSEA_API_BASE = 'https://api.opensea.io';
+
+// Deployment chain keys -> OpenSea chain identifiers.
+const CHAIN_MAP: Record<string, string> = {
+  ethereum: 'ethereum',
+  mainnet: 'ethereum',
+  eth: 'ethereum',
+  base: 'base',
+  polygon: 'matic',
+  matic: 'matic',
+  optimism: 'optimism',
+  op: 'optimism',
+  arbitrum: 'arbitrum',
+  arb: 'arbitrum',
+  avalanche: 'avalanche',
+  avax: 'avalanche',
+  blast: 'blast',
+  zora: 'zora',
+  sei: 'sei',
+  linea: 'linea',
+  berachain: 'berachain',
+  boba: 'boba',
+  scroll: 'scroll',
+  robinhood: 'robinhood',
+};
+
+interface DropStageResponse {
+  uuid?: string;
+  stage_type?: string;
+  label?: string | null;
+  price?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  max_per_wallet?: string | null;
+}
+
+interface DropResponse {
+  collection_slug?: string;
+  chain?: string;
+  contract_address?: string;
+  is_minting?: boolean;
+  active_stage?: DropStageResponse | null;
+  next_stage?: DropStageResponse | null;
 }
 
 export class OpenSeaApiClient {
@@ -87,138 +123,137 @@ export class OpenSeaApiClient {
     return key;
   }
 
-  private async graphql<T extends GraphqlResponse>(
-    query: string,
-    variables: Record<string, string>,
+  private async request(
+    path: string,
+    init: { method?: string; body?: unknown } = {},
     maxRetries = 3,
-  ): Promise<T> {
+  ): Promise<{ status: number; json: any }> {
     let attempt = 0;
-    while (attempt <= maxRetries) {
+    while (true) {
       attempt++;
-      const currentKey = this.getKey();
       try {
-        const res = await fetch(OPENSEA_GRAPHQL_URL, {
-          method: 'POST',
+        const res = await fetch(`${OPENSEA_API_BASE}${path}`, {
+          method: init.method ?? 'GET',
           headers: {
+            accept: 'application/json',
             'content-type': 'application/json',
-            authorization: `Bearer ${currentKey}`,
+            'x-api-key': this.getKey(),
           },
-          body: JSON.stringify({ query, variables }),
-          signal: AbortSignal.timeout(10000),
+          body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+          signal: AbortSignal.timeout(15000),
         });
 
-        if (res.status === 429) {
+        if (res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504) {
           if (attempt <= maxRetries) {
             const jitter = Math.floor(Math.random() * 150);
             const backoffMs = Math.min(3000, Math.floor(300 * Math.pow(2, attempt - 1)) + jitter);
             await new Promise((r) => setTimeout(r, backoffMs));
             continue;
           }
-          throw new OpenSeaApiError(`OpenSea rate limit exceeded (HTTP 429) after ${maxRetries} retries`);
+          throw new OpenSeaApiError(`OpenSea API responded ${res.status} after ${maxRetries} retries`);
         }
 
-        if ((res.status === 502 || res.status === 503 || res.status === 504) && attempt <= maxRetries) {
-          const backoffMs = 250 * attempt;
-          await new Promise((r) => setTimeout(r, backoffMs));
-          continue;
+        const text = await res.text();
+        let json: any = null;
+        try {
+          json = text ? JSON.parse(text) : null;
+        } catch {
+          json = null;
         }
-
-        if (!res.ok) {
-          throw new OpenSeaApiError(`OpenSea API responded ${res.status}`);
-        }
-
-        const json = (await res.json()) as T;
-        if (json.errors?.length) {
-          const errMsg = json.errors.map((e) => e.message).join('; ');
-          if (/rate limit|too many requests|throttl/i.test(errMsg) && attempt <= maxRetries) {
-            const jitter = Math.floor(Math.random() * 150);
-            const backoffMs = Math.min(3000, Math.floor(300 * Math.pow(2, attempt - 1)) + jitter);
-            await new Promise((r) => setTimeout(r, backoffMs));
-            continue;
-          }
-          throw new OpenSeaApiError(errMsg);
-        }
-
-        return json;
+        return { status: res.status, json };
       } catch (err) {
-        if (err instanceof OpenSeaApiError && err.code === 'OPENSEA_NOT_CONFIGURED') {
-          throw err;
-        }
-        if (attempt <= maxRetries && !/not configured/i.test(String(err))) {
-          const backoffMs = 250 * attempt;
-          await new Promise((r) => setTimeout(r, backoffMs));
+        if (err instanceof OpenSeaApiError && err.code === 'OPENSEA_NOT_CONFIGURED') throw err;
+        if (attempt <= maxRetries) {
+          await new Promise((r) => setTimeout(r, 250 * attempt));
           continue;
         }
         throw err;
       }
     }
-    throw new OpenSeaApiError('OpenSea request failed after retries');
   }
 
-  /** The active mint stage for a collection (slug-based). */
-  async fetchStage(slug: string, chainKey: string): Promise<MintStageInfo> {
-    const query = `
-      query MintStage($slug: String!, $chain: String!) {
-        collection(slug: $slug, chain: $chain) {
-          activeStage {
-            __typename
-            name
-            startTime
-            endTime
-          }
-        }
-      }`;
-    const json = await this.graphql(query, { slug, chain: chainKey });
-    const stage = json.data?.collection?.activeStage;
-    if (!stage) return { kind: 'none', startTime: null, endTime: null, name: null };
+  private static stageKind(stage: DropStageResponse): 'allowlist' | 'fcfs' | 'public' {
+    const raw = `${stage.stage_type ?? ''} ${stage.label ?? ''}`.toLowerCase();
+    if (raw.includes('public')) return 'public';
+    if (raw.includes('fcfs') || raw.includes('first come')) return 'fcfs';
+    return 'allowlist';
+  }
 
-    const raw = `${stage.__typename ?? ''} ${(stage as any).name ?? ''}`.toLowerCase();
-    const kind = raw.includes('fcfs') || raw.includes('first come')
-      ? 'fcfs'
-      : raw.includes('allow') || raw.includes('gtd') || raw.includes('list')
-        ? 'allowlist'
-        : raw.includes('public')
-          ? 'public'
-          : 'fcfs';
+  /**
+   * The relevant mint stage for a collection slug: the live stage when the
+   * drop is minting, otherwise the next upcoming stage.
+   */
+  async fetchStage(slug: string, _chainKey?: string): Promise<MintStageInfo> {
+    const { status, json } = await this.request(`/api/v2/drops/${encodeURIComponent(slug)}`);
+    if (status === 404) return { kind: 'none', startTime: null, endTime: null, name: null };
+    if (status !== 200) {
+      const msg = json?.errors?.join('; ') ?? `OpenSea drops API responded ${status}`;
+      throw new OpenSeaApiError(msg);
+    }
+    const drop = json as DropResponse;
+    const stage = drop.is_minting && drop.active_stage ? drop.active_stage : drop.next_stage;
+    if (!stage || !stage.start_time) {
+      return { kind: 'none', startTime: null, endTime: null, name: null };
+    }
     return {
-      kind,
-      startTime: stage.startTime ?? null,
-      endTime: stage.endTime ?? null,
-      name: (stage as any).name ?? null,
+      kind: OpenSeaApiClient.stageKind(stage),
+      startTime: stage.start_time,
+      endTime: stage.end_time ?? null,
+      name: stage.label ?? null,
     };
   }
 
-  /** Per-wallet signed mint action. Must be fetched fresh, close to fire time. */
+  /**
+   * Per-wallet signed mint action. Must be fetched fresh, close to fire time;
+   * only available while the target stage is the ACTIVE stage. Quantity is
+   * baked into the signed calldata, so it must match the mint quantity.
+   */
   async fetchWalletMintAction(
     slug: string,
     chainKey: string,
     walletAddress: string,
-  ): Promise<WalletMintAction | null> {
-    const query = `
-      query WalletMintAction($slug: String!, $chain: String!, $address: String!) {
-        collection(slug: $slug, chain: $chain) {
-          activeStage {
-            actions(address: $address) {
-              __typename
-              target
-              calldata
-              value
-              deadline
-            }
-          }
-        }
-      }`;
-    const json = await this.graphql(query, { slug, chain: chainKey, address: walletAddress });
-    const action = json.data?.collection?.activeStage?.actions?.find(
-      (a) => a.__typename === 'WalletMintAction' || a.calldata,
-    );
-    if (!action?.calldata || !action.target) return null;
-    return {
-      target: action.target,
-      calldata: action.calldata,
-      value: action.value ?? '0',
-      deadline: action.deadline ?? null,
-    };
+    quantity = 1,
+  ): Promise<WalletActionResult> {
+    let body: { to?: string; data?: string; value?: string } | null = null;
+    try {
+      const { status, json } = await this.request(
+        `/api/v2/drops/${encodeURIComponent(slug)}/mint`,
+        { method: 'POST', body: { minter: walletAddress, quantity } },
+      );
+      if (status === 200 && json?.data && json?.to) {
+        body = json as { to: string; data: string; value: string };
+        return {
+          action: {
+            target: body.to as string,
+            calldata: body.data as string,
+            value: body.value ?? '0',
+          },
+          reason: null,
+        };
+      }
+      const msg = Array.isArray(json?.errors)
+        ? json.errors.join('; ')
+        : `OpenSea mint API responded ${status}`;
+      return { action: null, reason: msg };
+    } catch (err) {
+      return { action: null, reason: (err as Error).message };
+    }
+  }
+
+  /** Resolve a contract address to its OpenSea collection slug. */
+  async resolveSlug(address: string, chainKey: string): Promise<string | null> {
+    const osChain = CHAIN_MAP[chainKey] ?? chainKey;
+    try {
+      const { status, json } = await this.request(
+        `/api/v2/chain/${osChain}/contract/${address}`,
+      );
+      if (status === 200 && typeof json?.collection === 'string' && json.collection) {
+        return json.collection;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
   }
 }
 
@@ -228,12 +263,7 @@ export async function checkEligibility(
   slug: string,
   chainKey: string,
   walletAddress: string,
-  _provider: Provider,
 ): Promise<boolean> {
-  try {
-    const action = await client.fetchWalletMintAction(slug, chainKey, walletAddress);
-    return action !== null;
-  } catch {
-    return false;
-  }
+  const { action } = await client.fetchWalletMintAction(slug, chainKey, walletAddress);
+  return action !== null;
 }

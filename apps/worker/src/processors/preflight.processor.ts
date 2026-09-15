@@ -53,10 +53,51 @@ export async function runPreflight(taskId: string): Promise<void> {
   const isAddress = /^0x[a-fA-F0-9]{40}$/.test(task.collection);
   let fireAt: Date | null = task.resolvedFireAt ?? null;
   let mode = task.mintMode;
+  let collection = task.collection;
+
+  const openSea = new OpenSeaApiClient(await getOpenSeaKey());
+
+  // ── Mode/collection resolution ──
+  // Allowlist/FCFS/Auto + contract address: resolve to an OpenSea drop slug so
+  // the signed path can fetch per-wallet actions. Auto prefers the on-chain
+  // public drop first and falls back to the signed path.
+  if (isAddress && mode !== MintMode.Public) {
+    if (mode === MintMode.Auto) {
+      const provider = new ethers.JsonRpcProvider(rpcUrls[0]);
+      const drop = await fetchPublicDrop(provider, seadropAddress, task.collection);
+      if (drop && drop.startTime !== null) {
+        mode = MintMode.Public;
+        await taskLog(taskId, 'info', 'Auto mode resolved to public (on-chain drop found)');
+      }
+    }
+    if (mode !== MintMode.Public) {
+      const slug = await openSea.resolveSlug(task.collection, task.chainKey).catch(() => null);
+      if (slug) {
+        collection = slug;
+        if (mode === MintMode.Auto) {
+          mode = MintMode.Allowlist;
+          await taskLog(taskId, 'info', `Auto mode resolved to allowlist (slug "${slug}")`);
+        } else {
+          await taskLog(taskId, 'info', `Resolved contract ${task.collection} to OpenSea slug "${slug}"`);
+        }
+      } else if (mode === MintMode.Auto) {
+        throw new Error(
+          `Auto mode: no public drop on-chain and no OpenSea drop for ${task.collection}`,
+        );
+      } else {
+        throw new Error(
+          `Contract ${task.collection} has no OpenSea drop; allowlist/FCFS needs an OpenSea drop slug`,
+        );
+      }
+    }
+  } else if (mode === MintMode.Auto) {
+    mode = MintMode.Allowlist;
+    await taskLog(taskId, 'info', 'Auto mode resolved to allowlist');
+  }
 
   // ── Resolve the fire time when waiting for a stage ──
   if (!fireAt) {
-    if (isAddress) {
+    if (mode === MintMode.Public && isAddress) {
       const provider = new ethers.JsonRpcProvider(rpcUrls[0]);
       const drop = await fetchPublicDrop(provider, seadropAddress, task.collection);
       if (!drop || drop.startTime === null) {
@@ -83,20 +124,17 @@ export async function runPreflight(taskId: string): Promise<void> {
       fireAt = new Date(drop.startTime * 1000);
       await taskLog(taskId, 'info', `Public stage opens at ${fireAt.toISOString()} (Price: ${formatEth(drop.mintPrice)} ETH)`);
     } else {
-      const openSea = new OpenSeaApiClient(await getOpenSeaKey());
-      const stage = await openSea.fetchStage(task.collection, task.chainKey);
+      const stage = await openSea.fetchStage(collection, task.chainKey);
       if (!stage.startTime) {
-        throw new Error(`No active stage found on OpenSea for ${task.collection}`);
+        throw new Error(`No active or upcoming stage found on OpenSea for ${collection}`);
       }
       fireAt = new Date(stage.startTime);
-      await taskLog(taskId, 'info', `Stage (${stage.kind}) opens at ${fireAt.toISOString()}`);
+      await taskLog(
+        taskId,
+        'info',
+        `Stage (${stage.kind}${stage.name ? ` "${stage.name}"` : ''}) opens at ${fireAt.toISOString()}`,
+      );
     }
-  }
-
-  // ── Auto mode resolution (public first, then signed path) ──
-  if (mode === MintMode.Auto) {
-    mode = isAddress ? MintMode.Public : MintMode.Allowlist;
-    await taskLog(taskId, 'info', `Auto mode resolved to ${mode}`);
   }
 
   // Clamp into the future: late pre-flights fire as soon as possible.
@@ -106,7 +144,7 @@ export async function runPreflight(taskId: string): Promise<void> {
 
   await prisma.task.update({
     where: { id: taskId },
-    data: { resolvedFireAt: fireAt, mintMode: mode },
+    data: { resolvedFireAt: fireAt, mintMode: mode, collection },
   });
 
   const mintAt = new Date(Math.max(Date.now() + 500, fireAt.getTime() - PRE_SIGN_LEAD_MS));

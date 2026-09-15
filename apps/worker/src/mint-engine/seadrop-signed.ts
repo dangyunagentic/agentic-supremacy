@@ -1,18 +1,14 @@
-// Signed-stage mint plan, ported from osnm-z's flow.
+// Signed-stage mint plan.
 //
 // Unlike the public path, calldata here is produced by OpenSea per wallet, so
-// the "plan" is fetched per wallet right before signing (T-2s in the
-// reference tool; we refresh after pre-sign lead to keep the action fresh).
+// the "plan" is fetched per wallet right before signing (we refresh it after
+// pre-sign lead to keep the action fresh). Quantity is baked into the signed
+// calldata, so the fetch must use the task's mint quantity.
 
-import type { Provider } from 'ethers';
-import type { OpenSeaApiClient, WalletMintAction } from './opensea-api';
+import type { OpenSeaApiClient } from './opensea-api';
+import type { WalletMintAction, SignedMintPlan } from './opensea-api';
 
-export interface SignedMintPlan {
-  walletAddress: string;
-  to: string;
-  data: string;
-  value: bigint;
-}
+export type { SignedMintPlan } from './opensea-api';
 
 export type SignedProgressCallback = (
   completed: number,
@@ -25,9 +21,10 @@ export async function buildSignedPlans(
   slug: string,
   chainKey: string,
   walletAddresses: string[],
-  _provider: Provider,
+  _provider: unknown,
   onProgress?: SignedProgressCallback,
   lanes?: number,
+  quantity = 1,
 ): Promise<SignedMintPlan[]> {
   const total = walletAddresses.length;
   if (total === 0) return [];
@@ -46,7 +43,7 @@ export async function buildSignedPlans(
       if (idx >= total) break;
       const address = walletAddresses[idx];
       try {
-        const action = await client.fetchWalletMintAction(slug, chainKey, address);
+        const { action } = await client.fetchWalletMintAction(slug, chainKey, address, quantity);
         actions[idx] = action;
         if (action) eligibleCount++;
       } catch {
