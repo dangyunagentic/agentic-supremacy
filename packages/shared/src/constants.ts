@@ -101,7 +101,7 @@ export const ENGINE_DEFAULTS = {
 } as const;
 
 export const PRE_FLIGHT_LEAD_MS = 60_000; // T-60s
-export const PRE_SIGN_LEAD_MS = 10_000; // T-10s
+export const PRE_SIGN_LEAD_MS = 60_000; // T-60s: poll calldata a full minute before the stage opens — OpenSea often issues signed actions before the on-chain start, and FCFS winners are armed before T-0.
 
 // Max wallets per task, by wallet mode. Self-funded & sponsored are unlimited.
 // `Infinity` keeps the `walletIds.length > limit` guard inert while still being

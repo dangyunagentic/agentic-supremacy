@@ -24,8 +24,10 @@ export type SignedProgressCallback = (
 export interface SignedPlanOptions {
   /** Retry the full wallet sweep until this epoch-ms when nothing is eligible. */
   retryUntilMs?: number;
-  /** Delay between retries (default 700ms). */
+  /** Delay between overlapping poll waves (default 75ms with 2 lanes). */
   retryIntervalMs?: number;
+  /** Number of overlapping poll waves (default 2). */
+  pollWaves?: number;
 }
 
 export async function buildSignedPlans(
@@ -79,21 +81,47 @@ export async function buildSignedPlans(
     return actions as Array<WalletMintAction | null> as Array<WalletMintAction>;
   }
 
-  // First sweep, then bounded retries while nothing is eligible yet (stage
-  // not open). Retries stop as soon as at least one action appears. Default
-  // interval 300ms: FCFS wars are won in the first seconds after the stage
-  // opens, so poll tight.
+  // First sweep, then overlapping poll waves while nothing is eligible yet
+  // (stage not open). Waves are staggered by `interval` and run concurrently,
+  // so the detection gap is ~interval (75ms) instead of a full round-trip
+  // (~300-500ms via OpenSea). First wallet to appear wins immediately.
   let actions = await sweep();
   if (
     actions.every((a) => a === null) &&
     options?.retryUntilMs !== undefined &&
     Date.now() < options.retryUntilMs
   ) {
-    const interval = options.retryIntervalMs ?? 300;
-    while (actions.every((a) => a === null) && Date.now() < options.retryUntilMs) {
-      await new Promise((r) => setTimeout(r, interval));
-      actions = await sweep();
-    }
+    const interval = options.retryIntervalMs ?? 75;
+    const waves = Math.max(1, options.pollWaves ?? 2);
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearInterval(timer);
+        resolve();
+      };
+      // Each wave re-checks; the first wave that sees an action finishes us.
+      const runWave = async () => {
+        while (!done && Date.now() < (options!.retryUntilMs as number)) {
+          const next = await sweep();
+          if (!next.every((a) => a === null)) {
+            actions = next;
+            finish();
+            return;
+          }
+          await new Promise((r) => setTimeout(r, interval * waves));
+        }
+        finish();
+      };
+      for (let w = 0; w < waves; w++) {
+        setTimeout(() => void runWave(), w * interval);
+      }
+      // Absolute deadline guard
+      const timer = setInterval(() => {
+        if (Date.now() >= (options!.retryUntilMs as number)) finish();
+      }, 100);
+    });
   }
 
   const plans: SignedMintPlan[] = [];

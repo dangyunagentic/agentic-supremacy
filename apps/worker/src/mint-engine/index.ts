@@ -156,7 +156,7 @@ export class MintEngine {
     quantity: number,
     wallets: EngineWallet[],
     onProgress?: SignedProgressCallback,
-    signedOptions?: { retryUntilMs?: number; retryIntervalMs?: number },
+    signedOptions?: { retryUntilMs?: number; retryIntervalMs?: number; pollWaves?: number },
   ): Promise<BuiltPlan> {
     if (mode === 'public') {
       try {

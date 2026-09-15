@@ -122,9 +122,10 @@ export async function runMint(taskId: string): Promise<void> {
           ).catch(() => undefined);
         }
       },
-      // Signed actions usually appear only once the stage opens; the mint job
-      // starts at T-10s, so keep re-fetching until fire time + buffer.
-      plannedFireAt !== null ? { retryUntilMs: plannedFireAt + 20_000, retryIntervalMs: 150 } : undefined,
+      // Signed actions usually appear only once the stage opens — sometimes
+      // BEFORE the on-chain start (war winners are armed pre-T-0). The mint
+      // job starts at T-60s and polls with 2 overlapping waves at 75ms stagger.
+      plannedFireAt !== null ? { retryUntilMs: plannedFireAt + 30_000, retryIntervalMs: 75, pollWaves: 2 } : undefined,
     );
 
     // Balance validation (already in flight; value guard re-checked with the
