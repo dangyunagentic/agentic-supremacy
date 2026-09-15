@@ -80,18 +80,18 @@ export async function buildSignedPlans(
   }
 
   // First sweep, then bounded retries while nothing is eligible yet (stage
-  // not open). Retries stop as soon as at least one action appears.
+  // not open). Retries stop as soon as at least one action appears. Default
+  // interval 300ms: FCFS wars are won in the first seconds after the stage
+  // opens, so poll tight.
   let actions = await sweep();
   if (
     actions.every((a) => a === null) &&
     options?.retryUntilMs !== undefined &&
     Date.now() < options.retryUntilMs
   ) {
-    const interval = options.retryIntervalMs ?? 700;
-    let attempt = 1;
+    const interval = options.retryIntervalMs ?? 300;
     while (actions.every((a) => a === null) && Date.now() < options.retryUntilMs) {
       await new Promise((r) => setTimeout(r, interval));
-      attempt++;
       actions = await sweep();
     }
   }
