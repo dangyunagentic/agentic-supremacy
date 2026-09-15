@@ -19,6 +19,19 @@ import { fetchPublicDrop } from '../mint-engine/seadrop-public';
 import { OpenSeaApiClient } from '../mint-engine/opensea-api';
 import { prisma, setTaskStatus, taskLog, decryptPrivateKey } from '../runtime';
 
+/** ethers JsonRpcProvider only speaks http(s); keep wss for the blast engine. */
+function httpRpc(urls: string[]): string[] {
+  const http = urls.filter((u) => /^https?:\/\//i.test(u));
+  if (http.length > 0) return http;
+  // wss-only config: upgrade to the http variant of the same host when it is
+  // an lb/alchemy style endpoint, else fail with a clear message.
+  const upgraded = urls
+    .map((u) => u.replace(/^wss:\/\//i, 'https://'))
+    .filter((u) => /^https?:\/\//i.test(u));
+  if (upgraded.length > 0) return upgraded;
+  throw new Error('No http(s) RPC endpoint available (ethers provider cannot use wss)');
+}
+
 export interface PreflightJobData {
   taskId: string;
 }
@@ -48,6 +61,8 @@ export async function runPreflight(taskId: string): Promise<void> {
   const profile = getChainProfile(task.chainKey);
   const rpcUrls = task.rpcUrls.length > 0 ? task.rpcUrls : (chain?.publicRpcs ?? profile?.rpc.public ?? []);
   if (rpcUrls.length === 0) throw new Error(`No RPC endpoints for chain ${task.chainKey}`);
+  // ethers providers only speak http(s); wss stays available for the blast.
+  const httpUrls = httpRpc(rpcUrls);
   const seadropAddress = chain?.seadropAddress ?? profile?.seadropAddress ?? SEADROP_ADDRESS;
 
   const isAddress = /^0x[a-fA-F0-9]{40}$/.test(task.collection);
@@ -63,7 +78,7 @@ export async function runPreflight(taskId: string): Promise<void> {
   // public drop first and falls back to the signed path.
   if (isAddress && mode !== MintMode.Public) {
     if (mode === MintMode.Auto) {
-      const provider = new ethers.JsonRpcProvider(rpcUrls[0]);
+      const provider = new ethers.JsonRpcProvider(httpUrls[0]);
       const drop = await fetchPublicDrop(provider, seadropAddress, task.collection);
       if (drop && drop.startTime !== null) {
         mode = MintMode.Public;
@@ -98,7 +113,7 @@ export async function runPreflight(taskId: string): Promise<void> {
   // ── Resolve the fire time when waiting for a stage ──
   if (!fireAt) {
     if (mode === MintMode.Public && isAddress) {
-      const provider = new ethers.JsonRpcProvider(rpcUrls[0]);
+      const provider = new ethers.JsonRpcProvider(httpUrls[0]);
       const drop = await fetchPublicDrop(provider, seadropAddress, task.collection);
       if (!drop || drop.startTime === null) {
         throw new Error('No public drop stage found on-chain and no explicit fire time set');

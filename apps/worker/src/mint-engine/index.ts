@@ -8,6 +8,7 @@ import { buildSignedPlans, type SignedMintPlan, type SignedProgressCallback } fr
 import { UniversalLaunchpadEngine, type UniversalMintPlan } from './universal-launchpad';
 import { blastToAll, waitForReceipt, type BlastResult } from './rpc-blast';
 import { warmConnections } from './connection-warmer';
+import { WsBlastPool } from './ws-blast-pool';
 import { waitForMintTime, waitForChainTime } from './timer';
 import { OpenSeaApiClient } from './opensea-api';
 
@@ -70,6 +71,8 @@ export class MintEngine {
   readonly provider: JsonRpcProvider;
   private readonly openSea: OpenSeaApiClient;
   private readonly universal = new UniversalLaunchpadEngine();
+  /** Persistent WSS sockets reused across blasts (zero handshake at T-0). */
+  readonly wsPool = new WsBlastPool();
   /** When auto mode resolves a contract address to an OpenSea drop slug. */
   private resolvedSlug: string | null = null;
 
@@ -77,7 +80,10 @@ export class MintEngine {
     readonly chain: EngineChain,
     openSeaApiKey: string | null,
   ) {
-    this.provider = new JsonRpcProvider(chain.rpcUrls[0]);
+    this.provider = new JsonRpcProvider(
+      chain.rpcUrls.find((u) => /^https?:\/\//i.test(u)) ??
+        chain.rpcUrls[0].replace(/^wss:\/\//i, 'https://'),
+    );
     this.openSea = new OpenSeaApiClient(openSeaApiKey);
   }
 
@@ -274,7 +280,13 @@ export class MintEngine {
   }
 
   async warm(): Promise<number> {
-    return warmConnections(this.chain.rpcUrls);
+    // Pre-open persistent WSS sockets so the blast pays no handshake, and warm
+    // the http(s) keep-alive pools in parallel.
+    const [wsMs, httpMs] = await Promise.all([
+      this.wsPool.warm(this.chain.rpcUrls),
+      warmConnections(this.chain.rpcUrls),
+    ]);
+    return Math.max(wsMs, httpMs);
   }
 
   async waitUntil(fireAt: Date, earlyFireMs = 0): Promise<void> {
@@ -345,11 +357,21 @@ export class MintEngine {
    */
   async blastAll(signed: SignedTx[], delayMs = 0, batchSize = 50): Promise<DispatchedTx[]> {
     const dispatched: DispatchedTx[] = new Array(signed.length);
+    const httpEndpoints = this.chain.rpcUrls.filter((u) => !/^wss?:\/\//i.test(u));
+    const wsEndpoints = this.chain.rpcUrls.filter((u) => /^wss?:\/\//i.test(u));
 
     const blastOne = async (s: SignedTx, index: number): Promise<void> => {
-      const { txHash, responsePromise } = blastToAll(s.rawTx, this.chain.rpcUrls);
-      void responsePromise;
-      dispatched[index] = { ...s, txHash, results: [] };
+      // HTTP endpoints go through the fire-and-forget path (keep-alive warm).
+      if (httpEndpoints.length > 0) {
+        const { txHash } = blastToAll(s.rawTx, httpEndpoints);
+        void txHash;
+      }
+      // WSS endpoints fire over the persistent pool: no handshake at T-0.
+      const wsResults = await Promise.all(
+        wsEndpoints.map((u) => this.wsPool.blast(u, s.rawTx, s.txHash)),
+      );
+      const accepted = wsResults.find((r) => r.ok);
+      dispatched[index] = { ...s, txHash: accepted?.txHash ?? s.txHash, results: [] };
     };
 
     const chunked: SignedTx[][] = [];
@@ -492,7 +514,7 @@ export class MintEngine {
   }
 
   async destroy(): Promise<void> {
-    await this.provider.destroy();
+    await Promise.allSettled([this.wsPool.close(), this.provider.destroy()]);
   }
 }
 
