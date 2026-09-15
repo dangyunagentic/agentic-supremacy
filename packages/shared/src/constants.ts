@@ -49,7 +49,7 @@ export const CHAIN_PROFILES: Record<string, ChainProfile> = {
     key: 'robinhood',
     chainId: 4663,
     name: 'Robinhood Chain',
-    explorer: 'https://robinhoodchain.blockscout.com',
+    explorer: 'https://robin.etherscan.io',
     nativeSymbol: 'ETH',
     rpc: {
       public: ['https://rpc.mainnet.chain.robinhood.com'],
