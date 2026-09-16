@@ -17,26 +17,31 @@ export interface UniversalMintPlan {
 export const UNIVERSAL_MINT_ABI = [
   // SeaDrop
   'function mintPublic(address nftContract, address feeRecipient, address minterIfNotPayer, uint256 quantity) external payable',
-  
+
   // Standard & Scatter & ERC-721A
   'function mint(uint256 quantity) external payable',
   'function mint(uint256 quantity, bytes32[] calldata merkleProof) external payable',
   'function mint(address recipient, uint256 quantity) external payable',
   'function publicMint(uint256 quantity) external payable',
   'function safeMint(address to, uint256 quantity) external payable',
-  
+
   // Zora
   'function mintWithRewards(address recipient, uint256 quantity, string comment, address mintReferral) external payable',
-  
+
   // Thirdweb & Manifold
   'function claim(address receiver, uint256 quantity, address currency, uint256 pricePerToken, tuple(bytes32[] proof, uint256 maxQuantityPerMint, uint256 pricePerToken, address currency) allowlistProof, bytes data) external payable',
-  
+
+  // Custom sale contracts (e.g. AKARII/aka.fun style: buy(amount))
+  'function buy(uint256 amount) external payable',
+
   // Custom / View price functions
   'function mintPrice() external view returns (uint256)',
   'function getMintPrice() external view returns (uint256)',
   'function price() external view returns (uint256)',
   'function cost() external view returns (uint256)',
   'function fee() external view returns (uint256)',
+  'function pricePerToken() external view returns (uint256)',
+  'function publicStart() external view returns (uint256)',
 ];
 
 export class UniversalLaunchpadEngine {
@@ -103,7 +108,7 @@ export class UniversalLaunchpadEngine {
       const iface = new Interface(UNIVERSAL_MINT_ABI);
 
       let unitPrice = 0n;
-      for (const fn of ['mintPrice', 'getMintPrice', 'price', 'cost', 'fee']) {
+      for (const fn of ['mintPrice', 'getMintPrice', 'price', 'cost', 'fee', 'pricePerToken']) {
         try {
           unitPrice = await contract[fn]();
           if (unitPrice > 0n) break;
@@ -113,6 +118,32 @@ export class UniversalLaunchpadEngine {
       }
 
       const totalValue = unitPrice * BigInt(quantity);
+
+      // Read a publicStart() when present so the engine can gate on the
+      // real on-chain stage start (custom sale contracts).
+      let publicStart: number | null = null;
+      try {
+        const s = await contract.publicStart();
+        publicStart = Number(s) > 0 ? Number(s) : null;
+      } catch {
+        // not a staged contract
+      }
+
+      // Custom buy(amount) sale contract (AKARII/aka.fun style): prefer when
+      // present over the generic mint() names.
+      try {
+        const data = iface.encodeFunctionData('buy', [quantity]);
+        return {
+          protocol: 'generic',
+          to: targetInput,
+          data,
+          value: totalValue,
+          mintPrice: unitPrice,
+          startTime: publicStart,
+        };
+      } catch {
+        // fall through
+      }
 
       // Check Zora mintWithRewards
       try {
