@@ -191,7 +191,7 @@ export default function RarityPage() {
                         <Sparkles className="size-4 text-accent" />
                       </div>
                     )}
-                    <Badge tone="accent" className="text-[10px]">#{t.rank}</Badge>
+                    <Badge tone="accent" className="text-[10px]">{t.rank}</Badge>
                   </div>
                   <p className="mono mt-1 text-xs text-text-primary">#{t.tokenId}</p>
                   <p className="text-[10px] text-text-muted">Score: {t.rarityScore.toFixed(4)}</p>
@@ -232,7 +232,7 @@ export default function RarityPage() {
                   {filtered.map((t) => (
                     <tr key={t.tokenId} className={cn('border-t border-border', t.rank <= 10 && 'bg-accent-subtle/40')}>
                       <td className="px-3 py-2">
-                        {t.rank <= 3 ? <Badge tone="accent">#{t.rank}</Badge> : <span className="text-text-muted">#{t.rank}</span>}
+                        {t.rank <= 3 ? <Badge tone="accent">{t.rank}</Badge> : <span className="text-text-muted">{t.rank}</span>}
                       </td>
                       <td className="mono px-3 py-2 text-text-primary">#{t.tokenId}</td>
                       <td className="px-3 py-2 font-mono text-accent">{t.rarityScore.toFixed(4)}</td>
